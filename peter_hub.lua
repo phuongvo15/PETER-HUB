@@ -477,25 +477,47 @@ AddConn(RunService.Heartbeat:Connect(function(dt)
     hrp.AssemblyLinearVelocity  = Vector3.zero
     hrp.AssemblyAngularVelocity = Vector3.zero
 
-    -- ── Tự động đánh (chỉ dùng VirtualUser click) ───────
+       -- ── Tự động đánh ─────────────────────────────────────
     farmTimer = farmTimer - dt
     if farmTimer <= 0 then
         farmTimer = FARM_ATK_CD
 
-        local cx = Camera.ViewportSize.X * 0.5
-        local cy = Camera.ViewportSize.Y * 0.5
+        -- Cách 1: Dùng Tool đang cầm trong tay (không tìm kiếm, chỉ dùng nếu có)
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then
+            pcall(function() tool:Activate() end)
+        end
 
+        -- Cách 2: mouse1click (hàm của executor - hoạt động trên hầu hết executor)
+        if mouse1click then
+            pcall(mouse1click)
+        end
+
+        -- Cách 3: mouse1press + mouse1release (executor cũ hơn)
+        if not mouse1click and mouse1press then
+            pcall(mouse1press)
+            task.defer(function() pcall(mouse1release) end)
+        end
+
+        -- Cách 4: Giả lập chạm vào quái (firetouchinterest)
+        if firetouchinterest and target:FindFirstChild("HumanoidRootPart") then
+            pcall(function()
+                firetouchinterest(hrp, target.HumanoidRootPart, 0) -- bắt đầu chạm
+                task.defer(function()
+                    pcall(firetouchinterest, hrp, target.HumanoidRootPart, 1) -- kết thúc chạm
+                end)
+            end)
+        end
+
+        -- Cách 5: VirtualUser (backup cuối cùng)
         pcall(function()
+            local cx = Camera.ViewportSize.X * 0.5
+            local cy = Camera.ViewportSize.Y * 0.5
+            VirtualUser:CaptureController()
             VirtualUser:Button1Down(Vector2.new(cx, cy), Camera.CFrame)
             VirtualUser:Button1Up(Vector2.new(cx, cy), Camera.CFrame)
         end)
     end
-end))
-
-AddToggle(P1, "🤖 Auto Farm (Bay Vuông Quanh Quái + Tự Đánh)", function(v)
-    S.AutoFarm = v
-    farmAngle  = 0
-    farmTimer  = 0
     -- Khi tắt: khôi phục AutoRotate
     local _,_,hum = GetChar()
     if hum then hum.AutoRotate = true end
