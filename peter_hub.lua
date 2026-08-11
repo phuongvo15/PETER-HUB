@@ -403,83 +403,113 @@ AddThread(function()
 end)
 
 -- ══════════════════════════════════════════════════════════
--- 1. AUTO FARM - Bay trên đầu, quái KHÔNG đánh được
+-- 1. AUTO FARM - Bay vuông quanh đầu quái + Tự động đánh
 -- ══════════════════════════════════════════════════════════
 AddLabel(P1, "── AUTO FARM ──────────────────")
 
-local farmTimer = 0
+local farmAngle  = 0      -- Góc quay hiện tại (radian)
+local farmTimer  = 0      -- Cooldown đánh
+local FARM_RADIUS  = 6    -- Bán kính quỹ đạo vuông quanh quái
+local FARM_HEIGHT  = 9    -- Độ cao trên đầu quái
+local FARM_ORBIT   = 1.8  -- Tốc độ bay vòng (radian/giây)
+local FARM_ATK_CD  = 0.1  -- Giây giữa mỗi lần đánh
+
+-- 4 góc của hình vuông (offset XZ so với đầu quái)
+local SQUARE = {
+    Vector3.new( 1,  0,  1),
+    Vector3.new(-1,  0,  1),
+    Vector3.new(-1,  0, -1),
+    Vector3.new( 1,  0, -1),
+}
+
 AddConn(RunService.Heartbeat:Connect(function(dt)
     if not S.AutoFarm then return end
-    farmTimer = farmTimer - dt
-    if farmTimer > 0 then return end
-    farmTimer = FARM_COOLDOWN
 
-    local char,hrp,hum = GetChar()
+    local char, hrp, hum = GetChar()
     if not char then return end
 
-    -- Tìm quái gần nhất trong cache
+    -- ── Tìm quái gần nhất từ cache ─────────────────────
     local target, minD = nil, math.huge
     for _, obj in ipairs(cachedMobs) do
-        if obj and obj.Parent and obj.Humanoid.Health > 0 then
-            local d = (obj.HumanoidRootPart.Position - hrp.Position).Magnitude
-            if d < minD then minD=d ; target=obj end
+        if obj and obj.Parent then
+            local ok, dist = pcall(function()
+                return (obj.HumanoidRootPart.Position - hrp.Position).Magnitude
+            end)
+            if ok and dist < minD and obj.Humanoid.Health > 0 then
+                minD = dist
+                target = obj
+            end
         end
     end
     if not target then return end
 
-    local targetHRP = target.HumanoidRootPart
+    local tHRP = target.HumanoidRootPart
 
-    -- Bay NGAY PHÍA TRÊN đầu quái (quái không tầm với được)
-    -- Mặt nhìn xuống quái để đánh trúng
-    local abovePos = targetHRP.Position + Vector3.new(0, FARM_HEIGHT, 0)
-    hrp.CFrame     = CFrame.new(abovePos, targetHRP.Position)
-
-    -- Khoá nhân vật không bị đẩy đi
-    hrp.Velocity        = Vector3.zero
-    hrp.RotVelocity     = Vector3.zero
-
-    -- Đảm bảo không bị va chạm đẩy ra
-    hum.AutoRotate = false
-
-    -- ---- TỰ ĐỘNG ĐÁNH ----
-    -- Cách 1: Dùng Tool trong tay
-    local tool = char:FindFirstChildOfClass("Tool")
-
-    -- Nếu không có tool trong tay, lấy từ Backpack
-    if not tool then
-        local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
-        if bp then tool = bp:FindFirstChildOfClass("Tool") end
-        if tool then hum:EquipTool(tool) end
+    -- ── Tính vị trí trên quỹ đạo hình VUÔNG ────────────
+    -- Đưa góc về [0, 2π]
+    farmAngle = farmAngle + dt * FARM_ORBIT
+    if farmAngle >= math.pi * 2 then
+        farmAngle = farmAngle - math.pi * 2
     end
 
-    if tool then
-        -- Kích hoạt tool (đánh bằng tool)
-        local remote = tool:FindFirstChildOfClass("RemoteEvent")
-            or tool:FindFirstChild("Handle") and tool.Handle:FindFirstChildOfClass("RemoteEvent")
-        pcall(function() tool:Activate() end)
-    else
-        -- Cách 2: Giả lập click chuột nếu không có tool
+    -- Xác định đang ở cạnh nào của hình vuông (4 cạnh)
+    local t01     = farmAngle / (math.pi * 2)   -- 0 → 1
+    local sideIdx = math.floor(t01 * 4)          -- 0, 1, 2, 3
+    local sideT   = (t01 * 4) - sideIdx          -- 0 → 1 trên mỗi cạnh
+
+    local s1 = SQUARE[sideIdx + 1]
+    local s2 = SQUARE[(sideIdx % 4) + 1 + 1] or SQUARE[1]
+
+    -- Lerp mượt giữa 2 góc liên tiếp → đường thẳng của cạnh hình vuông
+    local offset = Vector3.new(
+        s1.X + (s2.X - s1.X) * sideT,
+        0,
+        s1.Z + (s2.Z - s1.Z) * sideT
+    ) * FARM_RADIUS
+
+    -- Vị trí bay = trên đầu quái + offset hình vuông
+    local flyPos = tHRP.Position + offset + Vector3.new(0, FARM_HEIGHT, 0)
+
+    -- ── Đặt vị trí nhân vật, mặt nhìn vào quái ─────────
+    hrp.CFrame = CFrame.new(flyPos, tHRP.Position + Vector3.new(0, 2, 0))
+
+    -- Reset velocity mỗi frame để không bị vật lý đẩy đi
+    hrp.AssemblyLinearVelocity  = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+
+    -- ── Tự động đánh (chỉ dùng VirtualUser click) ───────
+    farmTimer = farmTimer - dt
+    if farmTimer <= 0 then
+        farmTimer = FARM_ATK_CD
+
+        local cx = Camera.ViewportSize.X * 0.5
+        local cy = Camera.ViewportSize.Y * 0.5
+
         pcall(function()
-            VirtualUser:Button1Down(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2), Camera.CFrame)
-            VirtualUser:Button1Up(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2), Camera.CFrame)
+            VirtualUser:Button1Down(Vector2.new(cx, cy), Camera.CFrame)
+            VirtualUser:Button1Up(Vector2.new(cx, cy), Camera.CFrame)
         end)
     end
-
-    -- Camera nhìn vào quái
-    pcall(function()
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHRP.Position)
-    end)
 end))
 
-AddToggle(P1, "🤖 Auto Farm (Bay Trên Đầu - Quái Không Đánh Được)", function(v)
+AddToggle(P1, "🤖 Auto Farm (Bay Vuông Quanh Quái + Tự Đánh)", function(v)
     S.AutoFarm = v
+    farmAngle  = 0
+    farmTimer  = 0
+    -- Khi tắt: khôi phục AutoRotate
     local _,_,hum = GetChar()
-    if hum then hum.AutoRotate = not v end
+    if hum then hum.AutoRotate = true end
 end)
 
--- Slider điều chỉnh độ cao bay
-AddSlider(P1, "Độ Cao Bay Trên Đầu Quái", 5, 20, 8, function(v) FARM_HEIGHT = v end)
+-- Slider điều chỉnh bán kính vòng bay
+AddSlider(P1, "Bán Kính Bay Quanh Quái", 3, 15, 6, function(v)
+    FARM_RADIUS = v
+end)
 
+-- Slider điều chỉnh tốc độ bay vòng
+AddSlider(P1, "Tốc Độ Xoay Quanh Quái", 1, 5, 2, function(v)
+    FARM_ORBIT = v
+end)
 -- ══════════════════════════════════════════════════════════
 -- 2. AUTO QUEST
 -- ══════════════════════════════════════════════════════════
