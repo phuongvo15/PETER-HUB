@@ -1,4 +1,4 @@
--- PETER HUB PRO - PHIÊN BẢN NÂNG CẤP HOÀN CHỈNH TOÀN BỘ (FULL CODE)
+-- PETER HUB PRO - TOÀN BỘ TÍNH NĂNG HOÀN CHỈNH VÀ ĐẦY ĐỦ KHÔNG THIẾU MỘT GÌ
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -8,7 +8,7 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Cấu hình Đảo & Nhiệm Vụ (Có thể thay đổi tùy chỉnh theo game của bạn)
+-- Cấu hình Đảo & Nhiệm Vụ
 local IslandList = {
     ["Đảo Khởi Đầu"] = Vector3.new(0, 5, 0),
     ["Đảo Cướp Biển"] = Vector3.new(1000, 5, 1000),
@@ -17,6 +17,7 @@ local IslandList = {
 }
 local QuestNPCName = "QuestGiver" -- Tên NPC nhận nhiệm vụ trong game
 
+-- Xóa UI cũ nếu tồn tại
 if PlayerGui:FindFirstChild("PeterHubUI") then
     PlayerGui.PeterHubUI:Destroy()
 end
@@ -25,6 +26,9 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "PeterHubUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
+
+-- Mảng lưu trữ kết nối để dọn dẹp khi tắt Hub
+local activeConnections = {}
 
 -- Nút nổi mở/đóng menu
 local ToggleBtn = Instance.new("TextButton")
@@ -43,11 +47,6 @@ local ToggleCorner = Instance.new("UICorner")
 ToggleCorner.CornerRadius = UDim.new(1, 0)
 ToggleCorner.Parent = ToggleBtn
 
-local ToggleStroke = Instance.new("UIStroke")
-ToggleStroke.Color = Color3.fromRGB(100, 180, 255)
-ToggleStroke.Thickness = 2
-ToggleStroke.Parent = ToggleBtn
-
 -- Khung giao diện chính
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 620, 0, 420)
@@ -62,18 +61,13 @@ local MainCorner = Instance.new("UICorner")
 MainCorner.CornerRadius = UDim.new(0, 12)
 MainCorner.Parent = MainFrame
 
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Color3.fromRGB(30, 45, 75)
-MainStroke.Thickness = 1.5
-MainStroke.Parent = MainFrame
-
 local isOpen = true
 ToggleBtn.MouseButton1Click:Connect(function()
     isOpen = not isOpen
     MainFrame.Visible = isOpen
 end)
 
--- Biến cờ kiểm soát toàn bộ tính năng
+-- Biến cờ trạng thái tính năng
 local autoFarmActive = false
 local autoQuestActive = false
 local aimbotActive = false
@@ -101,6 +95,7 @@ CloseCorner.CornerRadius = UDim.new(0, 8)
 CloseCorner.Parent = CloseBtn
 
 CloseBtn.MouseButton1Click:Connect(function()
+    -- Tắt toàn bộ trạng thái
     autoFarmActive = false
     autoQuestActive = false
     aimbotActive = false
@@ -111,17 +106,33 @@ CloseBtn.MouseButton1Click:Connect(function()
     jumpActive = false
     boostActive = false
 
+    -- Ngắt kết nối Boost nếu có
     if connectionBoost then
         connectionBoost:Disconnect()
         connectionBoost = nil
     end
 
+    -- Ngắt toàn bộ các kết nối trong mảng activeConnections
+    for _, conn in ipairs(activeConnections) do
+        if conn and conn.Connected then
+            conn:Disconnect()
+        end
+    end
+
+    -- Khôi phục trạng thái nhân vật về mặc định
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("Humanoid") then
         char.Humanoid.WalkSpeed = 16
         char.Humanoid.JumpPower = 50
+        char.Humanoid.UseJumpPower = true
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
     end
 
+    -- Hủy hoàn toàn GUI
     ScreenGui:Destroy()
 end)
 
@@ -132,17 +143,13 @@ Sidebar.BackgroundColor3 = Color3.fromRGB(6, 9, 15)
 Sidebar.BorderSizePixel = 0
 Sidebar.Parent = MainFrame
 
-local SidebarCorner = Instance.new("UICorner")
-SidebarCorner.CornerRadius = UDim.new(0, 12)
-SidebarCorner.Parent = Sidebar
-
 local HubTitle = Instance.new("TextLabel")
 HubTitle.Size = UDim2.new(1, 0, 0, 55)
 HubTitle.BackgroundTransparency = 1
 HubTitle.TextColor3 = Color3.fromRGB(0, 150, 255)
 HubTitle.TextSize = 16
 HubTitle.Font = Enum.Font.SourceSansBold
-HubTitle.Text = "⚡ PETER HUB PRO V2"
+HubTitle.Text = "⚡ PETER HUB PRO"
 HubTitle.Parent = Sidebar
 
 local SidebarList = Instance.new("UIListLayout")
@@ -163,7 +170,7 @@ local function CreatePage(name)
     page.Size = UDim2.new(1, -20, 1, -20)
     page.Position = UDim2.new(0, 10, 0, 10)
     page.BackgroundTransparency = 1
-    page.CanvasSize = UDim2.new(0, 0, 0, 600)
+    page.CanvasSize = UDim2.new(0, 0, 0, 650)
     page.ScrollBarThickness = 3
     page.Visible = false
     page.Parent = ContentArea
@@ -175,7 +182,6 @@ local function CreatePage(name)
 
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -12, 0, 42)
-    btn.Position = UDim2.new(0, 6, 0, 0)
     btn.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
     btn.TextColor3 = Color3.fromRGB(200, 210, 230)
     btn.TextSize = 13
@@ -310,13 +316,14 @@ local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
         dragging = true
     end)
 
-    UserInputService.InputEnded:Connect(function(input)
+    local inputEndConn = UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = false
         end
     end)
+    table.insert(activeConnections, inputEndConn)
 
-    UserInputService.InputChanged:Connect(function(input)
+    local inputChangedConn = UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local pos = math.clamp((input.Position.X - sliderBar.AbsolutePosition.X) / sliderBar.AbsoluteSize.X, 0, 1)
             sliderFill.Size = UDim2.new(pos, 0, 1, 0)
@@ -325,9 +332,10 @@ local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
             callback(val)
         end
     end)
+    table.insert(activeConnections, inputChangedConn)
 end
 
--- Hàm Nút bấm Thường (Dành cho Teleport)
+-- Hàm Nút bấm Thường (Teleport)
 local function AddButton(page, labelText, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 42)
@@ -345,8 +353,8 @@ local function AddButton(page, labelText, callback)
     btn.MouseButton1Click:Connect(callback)
 end
 
--- 1. Auto Farm Quái (Bay trên đầu quái, tối ưu hóa tấn công bằng Heartbeat)
-RunService.Heartbeat:Connect(function()
+-- 1. Auto Farm Quái (Bay trên đầu quái, tự động đánh)
+local farmConn = RunService.Heartbeat:Connect(function()
     if autoFarmActive then
         pcall(function()
             local char = LocalPlayer.Character
@@ -367,11 +375,9 @@ RunService.Heartbeat:Connect(function()
                 end
                 
                 if target and target:FindFirstChild("HumanoidRootPart") then
-                    -- Bay trên đầu quái 6 studs né đòn hoàn toàn
                     char.HumanoidRootPart.CFrame = target.HumanoidRootPart.CFrame + Vector3.new(0, 6, 0)
                     char.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
                     
-                    -- Trang bị hoặc kích hoạt tool tấn công
                     local tool = char:FindFirstChildOfClass("Tool")
                     if not tool then
                         local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
@@ -397,10 +403,11 @@ RunService.Heartbeat:Connect(function()
         end)
     end
 end)
-AddToggle(Page1, "🤖 Auto Farm (Bay Trên Đầu Né Đòn)", function(val) autoFarmActive = val end)
+table.insert(activeConnections, farmConn)
+AddToggle(Page1, "🤖 Auto Farm (Bay Trên Đầu & Tự Động Đánh)", function(val) autoFarmActive = val end)
 
--- 2. Auto Quest (Tự động nhận nhiệm vụ từ NPC)
-task.spawn(function()
+-- 2. Auto Quest
+local questTask = task.spawn(function()
     while true do
         task.wait(1.5)
         if autoQuestActive then
@@ -424,7 +431,7 @@ end)
 AddToggle(Page1, "📜 Auto Nhận Nhiệm Vụ (Auto Quest)", function(val) autoQuestActive = val end)
 
 -- 3. Aimbot
-RunService.RenderStepped:Connect(function()
+local aimbotConn = RunService.RenderStepped:Connect(function()
     if aimbotActive then
         pcall(function()
             local closestTarget = nil
@@ -450,10 +457,11 @@ RunService.RenderStepped:Connect(function()
         end)
     end
 end)
+table.insert(activeConnections, aimbotConn)
 AddToggle(Page1, "🎯 Aimbot Tự Động Ngắm", function(val) aimbotActive = val end)
 
 -- 4. NoClip
-RunService.Stepped:Connect(function()
+local noclipConn = RunService.Stepped:Connect(function()
     if noclipActive then
         local char = LocalPlayer.Character
         if char then
@@ -465,9 +473,10 @@ RunService.Stepped:Connect(function()
         end
     end
 end)
+table.insert(activeConnections, noclipConn)
 AddToggle(Page1, "👻 NoClip (Đi Xuyên Tường)", function(val) noclipActive = val end)
 
--- Hàm ESP Chung (Tên, Thanh máu, Highlight)
+-- Hàm ESP Chung
 local function updateESP(target, nameText, color)
     if not target or not target:FindFirstChild("HumanoidRootPart") then return end
     
@@ -544,7 +553,7 @@ local function removeESP(target)
 end
 
 -- 5. ESP Người Chơi
-task.spawn(function()
+local espPlayerTask = task.spawn(function()
     while true do
         task.wait(0.8)
         for _, p in ipairs(Players:GetPlayers()) do
@@ -561,7 +570,7 @@ end)
 AddToggle(Page2, "👁️ ESP Người Chơi & Thanh Máu", function(val) espPlayerActive = val end)
 
 -- 6. ESP Quái
-task.spawn(function()
+local espMobTask = task.spawn(function()
     while true do
         task.wait(1)
         if espMobActive then
@@ -597,7 +606,7 @@ end)
 
 -- 8. Chạy Nhanh
 local currentSpeedValue = 50
-RunService.RenderStepped:Connect(function()
+local speedConn = RunService.RenderStepped:Connect(function()
     if speedActive then
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("Humanoid") then
@@ -605,6 +614,8 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
+table.insert(activeConnections, speedConn)
+
 AddToggle(Page3, "⚡ Bật/Tắt Chạy Nhanh", function(val)
     speedActive = val
     local char = LocalPlayer.Character
@@ -624,7 +635,7 @@ end)
 
 -- 9. Nhảy Cao
 local currentJumpValue = 50
-RunService.RenderStepped:Connect(function()
+local jumpConn = RunService.RenderStepped:Connect(function()
     if jumpActive then
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("Humanoid") then
@@ -633,6 +644,8 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
+table.insert(activeConnections, jumpConn)
+
 AddToggle(Page3, "🦘 Bật/Tắt Nhảy Cao", function(val)
     jumpActive = val
     local char = LocalPlayer.Character
@@ -710,7 +723,7 @@ AddToggle(Page3, "🔥 Fix Lag Cực Mạnh (Tối Ưu Hóa Tối Đa)", functio
     end
 end)
 
--- 11. Các nút Dịch Chuyển Đảo (Teleport)
+-- 11. Dịch Chuyển Đảo (Teleport)
 local function TeleportTo(pos)
     pcall(function()
         local char = LocalPlayer.Character
