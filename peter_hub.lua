@@ -403,18 +403,19 @@ AddThread(function()
 end)
 
 -- ══════════════════════════════════════════════════════════
--- 1. AUTO FARM - Bay vuông quanh đầu quái + Tự động đánh
+-- 1. AUTO FARM - Bay vuông quanh đầu quái + Tự động đánh + Tay Dài
 -- ══════════════════════════════════════════════════════════
 AddLabel(P1, "── AUTO FARM ──────────────────")
 
-local farmAngle  = 0      -- Góc quay hiện tại (radian)
-local farmTimer  = 0      -- Cooldown đánh
-local FARM_RADIUS  = 6    -- Bán kính quỹ đạo vuông quanh quái
-local FARM_HEIGHT  = 9    -- Độ cao trên đầu quái
-local FARM_ORBIT   = 1.8  -- Tốc độ bay vòng (radian/giây)
-local FARM_ATK_CD  = 0.1  -- Giây giữa mỗi lần đánh
+local farmAngle   = 0
+local farmTimer   = 0
+local FARM_RADIUS = 6     -- Bán kính bay
+local FARM_HEIGHT = 9     -- Độ cao
+local FARM_ORBIT  = 1.8   -- Tốc độ quay
+local FARM_ATK_CD = 0.1   -- Tốc độ đánh
 
--- 4 góc của hình vuông (offset XZ so với đầu quái)
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
 local SQUARE = {
     Vector3.new( 1,  0,  1),
     Vector3.new(-1,  0,  1),
@@ -422,7 +423,42 @@ local SQUARE = {
     Vector3.new( 1,  0, -1),
 }
 
+-- Hàm tự động trang bị vũ khí (nếu đang cất trong túi)
+local function EquipWeapon()
+    local char = game.Players.LocalPlayer.Character
+    if not char then return nil end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool then return tool end -- Đang cầm sẵn
+    
+    local bp = game.Players.LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        local newTool = bp:FindFirstChildOfClass("Tool")
+        if newTool and char:FindFirstChild("Humanoid") then
+            char.Humanoid:EquipTool(newTool)
+            return newTool
+        end
+    end
+    return nil
+end
+
 AddConn(RunService.Heartbeat:Connect(function(dt)
+    -- ── HACK TAY DÀI (REACH) ──────────────────────────
+    if S.TayDai then
+        local tool = EquipWeapon()
+        if tool then
+            for _, v in pairs(tool:GetDescendants()) do
+                if v:IsA("BasePart") or v:IsA("MeshPart") then
+                    v.Size = Vector3.new(40, 40, 40) -- Kéo dài tầm đánh 40 studs
+                    v.Massless = true
+                    v.CanCollide = false
+                    if v.Name == "Handle" then
+                        v.Transparency = 0.8 -- Làm mờ vũ khí khổng lồ cho đỡ lag mắt
+                    end
+                end
+            end
+        end
+    end
+
     if not S.AutoFarm then return end
 
     local char, hrp, hum = GetChar()
@@ -446,81 +482,64 @@ AddConn(RunService.Heartbeat:Connect(function(dt)
     local tHRP = target.HumanoidRootPart
 
     -- ── Tính vị trí trên quỹ đạo hình VUÔNG ────────────
-    -- Đưa góc về [0, 2π]
     farmAngle = farmAngle + dt * FARM_ORBIT
     if farmAngle >= math.pi * 2 then
         farmAngle = farmAngle - math.pi * 2
     end
 
-    -- Xác định đang ở cạnh nào của hình vuông (4 cạnh)
-    local t01     = farmAngle / (math.pi * 2)   -- 0 → 1
-    local sideIdx = math.floor(t01 * 4)          -- 0, 1, 2, 3
-    local sideT   = (t01 * 4) - sideIdx          -- 0 → 1 trên mỗi cạnh
+    local t01     = farmAngle / (math.pi * 2)
+    local sideIdx = math.floor(t01 * 4)
+    local sideT   = (t01 * 4) - sideIdx
 
     local s1 = SQUARE[sideIdx + 1]
     local s2 = SQUARE[(sideIdx % 4) + 1 + 1] or SQUARE[1]
 
-    -- Lerp mượt giữa 2 góc liên tiếp → đường thẳng của cạnh hình vuông
     local offset = Vector3.new(
         s1.X + (s2.X - s1.X) * sideT,
         0,
         s1.Z + (s2.Z - s1.Z) * sideT
     ) * FARM_RADIUS
 
-    -- Vị trí bay = trên đầu quái + offset hình vuông
     local flyPos = tHRP.Position + offset + Vector3.new(0, FARM_HEIGHT, 0)
 
-    -- ── Đặt vị trí nhân vật, mặt nhìn vào quái ─────────
+    -- ── Đặt vị trí nhân vật, mặt luôn nhìn vào quái ─────
     hrp.CFrame = CFrame.new(flyPos, tHRP.Position + Vector3.new(0, 2, 0))
-
-    -- Reset velocity mỗi frame để không bị vật lý đẩy đi
     hrp.AssemblyLinearVelocity  = Vector3.zero
     hrp.AssemblyAngularVelocity = Vector3.zero
 
-       -- ── Tự động đánh ─────────────────────────────────────
+    -- ── TỰ ĐỘNG ĐÁNH SIÊU CHUẨN ─────────────────────────
     farmTimer = farmTimer - dt
     if farmTimer <= 0 then
         farmTimer = FARM_ATK_CD
-
-        -- Cách 1: Dùng Tool đang cầm trong tay (không tìm kiếm, chỉ dùng nếu có)
-        local tool = char:FindFirstChildOfClass("Tool")
-        if tool then
-            pcall(function() tool:Activate() end)
-        end
-
-        -- Cách 2: mouse1click (hàm của executor - hoạt động trên hầu hết executor)
-        if mouse1click then
-            pcall(mouse1click)
-        end
-
-        -- Cách 3: mouse1press + mouse1release (executor cũ hơn)
-        if not mouse1click and mouse1press then
-            pcall(mouse1press)
-            task.defer(function() pcall(mouse1release) end)
-        end
-
-        -- Cách 4: Giả lập chạm vào quái (firetouchinterest)
-        if firetouchinterest and target:FindFirstChild("HumanoidRootPart") then
-            pcall(function()
-                firetouchinterest(hrp, target.HumanoidRootPart, 0) -- bắt đầu chạm
-                task.defer(function()
-                    pcall(firetouchinterest, hrp, target.HumanoidRootPart, 1) -- kết thúc chạm
-                end)
-            end)
-        end
-
-        -- Cách 5: VirtualUser (backup cuối cùng)
+        
+        -- Gọi vũ khí ra tay nếu chưa cầm
+        local tool = EquipWeapon()
+        
         pcall(function()
-            local cx = Camera.ViewportSize.X * 0.5
-            local cy = Camera.ViewportSize.Y * 0.5
-            VirtualUser:CaptureController()
-            VirtualUser:Button1Down(Vector2.new(cx, cy), Camera.CFrame)
-            VirtualUser:Button1Up(Vector2.new(cx, cy), Camera.CFrame)
+            -- 1. VirtualInputManager: Giả lập click chuột cứng (chắc chắn ăn)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+            task.delay(0.02, function()
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+            end)
+            
+            -- 2. Kích hoạt trực tiếp Tool (Dự phòng)
+            if tool then
+                tool:Activate()
+            end
         end)
     end
-    -- Khi tắt: khôi phục AutoRotate
+end))
+
+AddToggle(P1, "🤖 Auto Farm (Bay Vuông + Tự Đánh)", function(v)
+    S.AutoFarm = v
+    farmAngle  = 0
+    farmTimer  = 0
     local _,_,hum = GetChar()
     if hum then hum.AutoRotate = true end
+end)
+
+AddToggle(P1, "⚔️ Hack Tay Dài (Mở rộng tầm đánh)", function(v)
+    S.TayDai = v
 end)
 
 -- Slider điều chỉnh bán kính vòng bay
