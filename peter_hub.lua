@@ -1,760 +1,833 @@
--- PETER HUB PRO - FULL TÍNH NĂNG - ĐÃ SỬA LỖI HOÀN TOÀN
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║           PETER HUB PRO v3 - FULL & FIXED              ║
+-- ╚══════════════════════════════════════════════════════════╝
+
+local Players        = game:GetService("Players")
+local RunService     = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local Lighting = game:GetService("Lighting")
-local VirtualUser = game:GetService("VirtualUser")
-local Workspace = game:GetService("Workspace")
+local Lighting       = game:GetService("Lighting")
+local VirtualUser    = game:GetService("VirtualUser")
+local TweenService   = game:GetService("TweenService")
 
-local Camera = Workspace.CurrentCamera
+local Camera      = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
--- [Cấu hình]
+-- ══════════════════════════════════════════════════════════
+-- CẤU HÌNH
+-- ══════════════════════════════════════════════════════════
 local IslandList = {
-    ["Đảo Khởi Đầu"]  = Vector3.new(0, 5, 0),
-    ["Đảo Cướp Biển"] = Vector3.new(1000, 5, 1000),
-    ["Đảo Cát"]       = Vector3.new(2500, 5, -1500),
-    ["Đảo Trời"]      = Vector3.new(-4500, 500, 3500),
+    ["Đảo Khởi Đầu"]  = Vector3.new(0,    5,    0),
+    ["Đảo Cướp Biển"] = Vector3.new(1000,  5, 1000),
+    ["Đảo Cát"]       = Vector3.new(2500,  5, -1500),
+    ["Đảo Trời"]      = Vector3.new(-4500,500,  3500),
 }
-local QuestNPCName = "QuestGiver"
+local QuestNPCName   = "QuestGiver"
+local FARM_HEIGHT    = 8    -- Độ cao bay trên đầu quái (studs)
+local FARM_COOLDOWN  = 0.08 -- Tần suất đánh (giây)
 
--- ============================================================
---  QUẢN LÝ VÒNG ĐỜI (Lifecycle Management)
--- ============================================================
-local HubAlive = true
-local activeConnections = {}
-local activeThreads    = {}
+-- ══════════════════════════════════════════════════════════
+-- QUẢN LÝ VÒNG ĐỜI
+-- ══════════════════════════════════════════════════════════
+local HubAlive       = true
+local Connections    = {}
+local Threads        = {}
+local connectionBoost = nil
 
-local function SafeCall(func, ...)
-    local ok, err = pcall(func, ...)
-    if not ok then warn("[PeterHub] Lỗi:", err) end
-end
+local function AddConn(c)   table.insert(Connections, c) end
+local function AddThread(fn) table.insert(Threads, task.spawn(fn)) end
 
-local function RegConn(conn)
-    table.insert(activeConnections, conn)
-    return conn
-end
-
-local function RegThread(fn)
-    local t = task.spawn(fn)
-    table.insert(activeThreads, t)
-    return t
-end
-
--- ============================================================
---  DỌN SẠCH BẢN CŨ
--- ============================================================
+-- Dọn UI cũ
 if PlayerGui:FindFirstChild("PeterHubUI") then
     PlayerGui.PeterHubUI:Destroy()
 end
 
--- ============================================================
---  SCREENGU & KHUNG CHÍNH
--- ============================================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name          = "PeterHubUI"
-ScreenGui.ResetOnSpawn  = false
-ScreenGui.Parent        = PlayerGui
+-- ══════════════════════════════════════════════════════════
+-- TRẠNG THÁI TÍNH NĂNG
+-- ══════════════════════════════════════════════════════════
+local S = {
+    AutoFarm  = false,
+    AutoQuest = false,
+    Aimbot    = false,
+    Noclip    = false,
+    EspPlayer = false,
+    EspMob    = false,
+    Speed     = false,
+    Jump      = false,
+    Boost     = false,
+}
+local speedVal = 50
+local jumpVal  = 50
 
--- Nút Toggle nổi
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size            = UDim2.new(0, 52, 0, 52)
-ToggleBtn.Position        = UDim2.new(0, 20, 0.4, 0)
-ToggleBtn.BackgroundColor3= Color3.fromRGB(0, 120, 255)
-ToggleBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
-ToggleBtn.TextSize        = 13
-ToggleBtn.Font            = Enum.Font.SourceSansBold
-ToggleBtn.Text            = "PETER"
-ToggleBtn.Draggable       = true
-ToggleBtn.Parent          = ScreenGui
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+-- ══════════════════════════════════════════════════════════
+-- HELPER: Lấy character an toàn
+-- ══════════════════════════════════════════════════════════
+local function GetChar()
+    local c = LocalPlayer.Character
+    if not c then return nil end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    local hum = c:FindFirstChild("Humanoid")
+    if not hrp or not hum or hum.Health <= 0 then return nil end
+    return c, hrp, hum
+end
+
+-- ══════════════════════════════════════════════════════════
+-- UI KHUNG CHÍNH
+-- ══════════════════════════════════════════════════════════
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name         = "PeterHubUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent       = PlayerGui
+
+-- Nút nổi Toggle
+local ToggleBtn = Instance.new("TextButton", ScreenGui)
+ToggleBtn.Size              = UDim2.new(0,54,0,54)
+ToggleBtn.Position          = UDim2.new(0,20,0.4,0)
+ToggleBtn.BackgroundColor3  = Color3.fromRGB(0,120,255)
+ToggleBtn.TextColor3        = Color3.fromRGB(255,255,255)
+ToggleBtn.TextSize          = 12
+ToggleBtn.Font              = Enum.Font.SourceSansBold
+ToggleBtn.Text              = "⚡\nPETER"
+ToggleBtn.Draggable         = true
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1,0)
 
 -- Khung chính
-local MainFrame = Instance.new("Frame")
-MainFrame.Size             = UDim2.new(0, 620, 0, 420)
-MainFrame.Position         = UDim2.new(0.5, -310, 0.5, -210)
-MainFrame.BackgroundColor3 = Color3.fromRGB(10, 14, 22)
-MainFrame.BorderSizePixel  = 0
-MainFrame.Active           = true
-MainFrame.Draggable        = true
-MainFrame.Parent           = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+local Main = Instance.new("Frame", ScreenGui)
+Main.Size              = UDim2.new(0,640,0,440)
+Main.Position          = UDim2.new(0.5,-320,0.5,-220)
+Main.BackgroundColor3  = Color3.fromRGB(10,14,22)
+Main.BorderSizePixel   = 0
+Main.Active            = true
+Main.Draggable         = true
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0,14)
+
+-- Viền gradient
+local stroke = Instance.new("UIStroke", Main)
+stroke.Color     = Color3.fromRGB(0,100,220)
+stroke.Thickness = 1.5
 
 local isOpen = true
 ToggleBtn.MouseButton1Click:Connect(function()
     isOpen = not isOpen
-    MainFrame.Visible = isOpen
+    Main.Visible = isOpen
 end)
 
--- ============================================================
---  TRẠNG THÁI TÍNH NĂNG
--- ============================================================
-local autoFarmActive  = false
-local autoQuestActive = false
-local aimbotActive    = false
-local noclipActive    = false
-local espPlayerActive = false
-local espMobActive    = false
-local speedActive     = false
-local jumpActive      = false
-local boostActive     = false
-
--- ============================================================
---  NÚT ĐÓNG HUB [X]  — dọn dẹp toàn diện
--- ============================================================
-local function removeESP(target)
-    if not target then return end
-    local ui = target:FindFirstChild("PeterESP_UI")
-    local hl = target:FindFirstChild("PeterESP_HL")
-    if ui then ui:Destroy() end
-    if hl then hl:Destroy() end
-end
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size             = UDim2.new(0, 32, 0, 32)
-CloseBtn.Position         = UDim2.new(1, -42, 0, 12)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-CloseBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
-CloseBtn.TextSize         = 14
+-- ══════════════════════════════════════════════════════════
+-- NÚT ĐÓNG [X]
+-- ══════════════════════════════════════════════════════════
+local CloseBtn = Instance.new("TextButton", Main)
+CloseBtn.Size             = UDim2.new(0,32,0,32)
+CloseBtn.Position         = UDim2.new(1,-44,0,12)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(220,50,50)
+CloseBtn.TextColor3       = Color3.fromRGB(255,255,255)
+CloseBtn.TextSize         = 15
 CloseBtn.Font             = Enum.Font.SourceSansBold
-CloseBtn.Text             = "X"
-CloseBtn.Parent           = MainFrame
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
+CloseBtn.Text             = "✕"
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0,8)
 
 CloseBtn.MouseButton1Click:Connect(function()
     HubAlive = false
+    S.AutoFarm=false S.AutoQuest=false S.Aimbot=false S.Noclip=false
+    S.EspPlayer=false S.EspMob=false S.Speed=false S.Jump=false S.Boost=false
 
-    -- Tắt tất cả flag
-    autoFarmActive  = false
-    autoQuestActive = false
-    aimbotActive    = false
-    noclipActive    = false
-    espPlayerActive = false
-    espMobActive    = false
-    speedActive     = false
-    jumpActive      = false
-    boostActive     = false
+    -- Ngắt tất cả
+    for _,c in ipairs(Connections) do if c and c.Connected then c:Disconnect() end end
+    for _,t in ipairs(Threads)     do task.cancel(t) end
+    if connectionBoost then connectionBoost:Disconnect() connectionBoost=nil end
 
-    -- Ngắt connections
-    for _, c in ipairs(activeConnections) do
-        if c and c.Connected then c:Disconnect() end
-    end
-    -- Hủy threads
-    for _, t in ipairs(activeThreads) do
-        task.cancel(t)
-    end
-    table.clear(activeConnections)
-    table.clear(activeThreads)
-
-    -- Xóa toàn bộ ESP còn sót
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj.Name == "PeterESP_UI" or obj.Name == "PeterESP_HL" then
-            SafeCall(function() obj:Destroy() end)
-        end
+    -- Xóa ESP
+    for _,obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name=="PESP_UI" or obj.Name=="PESP_HL" then pcall(obj.Destroy,obj) end
     end
 
     -- Khôi phục nhân vật
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChild("Humanoid")
-        if hum then
-            hum.WalkSpeed    = 16
-            hum.JumpPower    = 50
-            hum.UseJumpPower = true
-        end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = true end
+    local c,hrp,hum = GetChar()
+    if hum then hum.WalkSpeed=16 hum.JumpPower=50 hum.UseJumpPower=true end
+    if c then
+        for _,p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide=true end
         end
     end
-
     ScreenGui:Destroy()
 end)
 
--- ============================================================
---  SIDEBAR & CONTENT AREA
--- ============================================================
-local Sidebar = Instance.new("Frame", MainFrame)
-Sidebar.Size             = UDim2.new(0, 160, 1, 0)
-Sidebar.BackgroundColor3 = Color3.fromRGB(6, 9, 15)
+-- ══════════════════════════════════════════════════════════
+-- SIDEBAR
+-- ══════════════════════════════════════════════════════════
+local Sidebar = Instance.new("Frame", Main)
+Sidebar.Size             = UDim2.new(0,165,1,0)
+Sidebar.BackgroundColor3 = Color3.fromRGB(6,9,15)
 Sidebar.BorderSizePixel  = 0
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0,14)
 
-local HubTitle = Instance.new("TextLabel", Sidebar)
-HubTitle.Size               = UDim2.new(1, 0, 0, 55)
-HubTitle.BackgroundTransparency = 1
-HubTitle.TextColor3         = Color3.fromRGB(0, 150, 255)
-HubTitle.TextSize           = 16
-HubTitle.Font               = Enum.Font.SourceSansBold
-HubTitle.Text               = "⚡ PETER HUB PRO"
+local Title = Instance.new("TextLabel", Sidebar)
+Title.Size               = UDim2.new(1,0,0,58)
+Title.BackgroundTransparency = 1
+Title.TextColor3         = Color3.fromRGB(0,160,255)
+Title.TextSize           = 15
+Title.Font               = Enum.Font.SourceSansBold
+Title.Text               = "⚡ PETER HUB PRO"
 
-local SidebarList = Instance.new("UIListLayout", Sidebar)
-SidebarList.SortOrder = Enum.SortOrder.LayoutOrder
-SidebarList.Padding   = UDim.new(0, 6)
+local SbLayout = Instance.new("UIListLayout", Sidebar)
+SbLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SbLayout.Padding   = UDim.new(0,4)
 
-local ContentArea = Instance.new("Frame", MainFrame)
-ContentArea.Size             = UDim2.new(1, -160, 1, 0)
-ContentArea.Position         = UDim2.new(0, 160, 0, 0)
-ContentArea.BackgroundTransparency = 1
+local SbPad = Instance.new("UIPadding", Sidebar)
+SbPad.PaddingLeft  = UDim.new(0,6)
+SbPad.PaddingRight = UDim.new(0,6)
 
+-- Content Area
+local Content = Instance.new("Frame", Main)
+Content.Size                 = UDim2.new(1,-165,1,0)
+Content.Position             = UDim2.new(0,165,0,0)
+Content.BackgroundTransparency = 1
+
+-- ══════════════════════════════════════════════════════════
+-- TẠO TRANG
+-- ══════════════════════════════════════════════════════════
 local Pages = {}
-local function CreatePage(name)
-    local page = Instance.new("ScrollingFrame", ContentArea)
-    page.Size               = UDim2.new(1, -20, 1, -20)
-    page.Position           = UDim2.new(0, 10, 0, 10)
-    page.BackgroundTransparency = 1
-    page.CanvasSize         = UDim2.new(0, 0, 0, 750)
-    page.ScrollBarThickness = 3
-    page.Visible            = false
+local activeBtn = nil
 
-    local layout = Instance.new("UIListLayout", page)
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding   = UDim.new(0, 8)
+local function CreatePage(icon, name)
+    local scroll = Instance.new("ScrollingFrame", Content)
+    scroll.Size               = UDim2.new(1,-14,1,-12)
+    scroll.Position           = UDim2.new(0,7,0,6)
+    scroll.BackgroundTransparency = 1
+    scroll.CanvasSize         = UDim2.new(0,0,0,0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ScrollBarThickness = 3
+    scroll.ScrollBarImageColor3 = Color3.fromRGB(0,120,255)
+    scroll.Visible            = false
+    local lay = Instance.new("UIListLayout", scroll)
+    lay.SortOrder = Enum.SortOrder.LayoutOrder
+    lay.Padding   = UDim.new(0,7)
 
-    local btn = Instance.new("TextButton", Sidebar)
-    btn.Size             = UDim2.new(1, -12, 0, 42)
-    btn.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
-    btn.TextColor3       = Color3.fromRGB(200, 210, 230)
-    btn.TextSize         = 13
-    btn.Font             = Enum.Font.SourceSansSemibold
-    btn.Text             = name
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    local navBtn = Instance.new("TextButton", Sidebar)
+    navBtn.Size             = UDim2.new(1,0,0,40)
+    navBtn.BackgroundColor3 = Color3.fromRGB(14,20,34)
+    navBtn.TextColor3       = Color3.fromRGB(180,195,220)
+    navBtn.TextSize         = 12
+    navBtn.Font             = Enum.Font.SourceSansSemibold
+    navBtn.Text             = icon.." "..name
+    navBtn.TextXAlignment   = Enum.TextXAlignment.Left
+    local np = Instance.new("UIPadding", navBtn)
+    np.PaddingLeft = UDim.new(0,10)
+    Instance.new("UICorner", navBtn).CornerRadius = UDim.new(0,8)
 
-    btn.MouseButton1Click:Connect(function()
-        for _, p in pairs(Pages) do p.Visible = false end
-        page.Visible = true
+    navBtn.MouseButton1Click:Connect(function()
+        for _,p in pairs(Pages) do p.Visible=false end
+        scroll.Visible = true
+        if activeBtn then
+            activeBtn.BackgroundColor3 = Color3.fromRGB(14,20,34)
+            activeBtn.TextColor3       = Color3.fromRGB(180,195,220)
+        end
+        navBtn.BackgroundColor3 = Color3.fromRGB(0,90,200)
+        navBtn.TextColor3       = Color3.fromRGB(255,255,255)
+        activeBtn = navBtn
     end)
-
-    table.insert(Pages, page)
-    return page
+    table.insert(Pages, scroll)
+    return scroll, navBtn
 end
 
-local Page1 = CreatePage("⚡ Auto & Chiến Đấu")
-local Page2 = CreatePage("👁️ ESP & Tầm Nhìn")
-local Page3 = CreatePage("🛠️ Tốc Độ & Đồ Họa")
-local Page4 = CreatePage("🗺️ Dịch Chuyển Đảo")
-Page1.Visible = true
+local P1,B1 = CreatePage("⚔️","Auto & Chiến Đấu")
+local P2,B2 = CreatePage("👁️","ESP & Tầm Nhìn")
+local P3,B3 = CreatePage("🛠️","Tốc Độ & Đồ Họa")
+local P4,B4 = CreatePage("🗺️","Dịch Chuyển Đảo")
 
--- ============================================================
---  UI HELPERS: AddToggle / AddSlider / AddButton
--- ============================================================
-local function AddToggle(page, labelText, callback)
-    local row = Instance.new("Frame", page)
-    row.Size             = UDim2.new(1, 0, 0, 46)
-    row.BackgroundColor3 = Color3.fromRGB(16, 23, 36)
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+-- Mở trang đầu
+P1.Visible = true
+B1.BackgroundColor3 = Color3.fromRGB(0,90,200)
+B1.TextColor3       = Color3.fromRGB(255,255,255)
+activeBtn = B1
 
-    local label = Instance.new("TextLabel", row)
-    label.Size               = UDim2.new(0.65, 0, 1, 0)
-    label.Position           = UDim2.new(0, 14, 0, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3         = Color3.fromRGB(230, 235, 245)
-    label.TextSize           = 13
-    label.Font               = Enum.Font.SourceSansSemibold
-    label.TextXAlignment     = Enum.TextXAlignment.Left
-    label.Text               = labelText
+-- ══════════════════════════════════════════════════════════
+-- UI HELPERS
+-- ══════════════════════════════════════════════════════════
+local function MakeRow(parent, h)
+    local f = Instance.new("Frame", parent)
+    f.Size             = UDim2.new(1,0,0,h or 48)
+    f.BackgroundColor3 = Color3.fromRGB(15,22,36)
+    f.BorderSizePixel  = 0
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0,9)
+    return f
+end
 
-    local switchBg = Instance.new("TextButton", row)
-    switchBg.Size             = UDim2.new(0, 52, 0, 28)
-    switchBg.Position         = UDim2.new(1, -64, 0.5, -14)
-    switchBg.BackgroundColor3 = Color3.fromRGB(35, 45, 65)
-    switchBg.Text             = ""
-    Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
+local function AddToggle(page, text, onToggle)
+    local row = MakeRow(page, 48)
 
-    local switchKnob = Instance.new("Frame", switchBg)
-    switchKnob.Size             = UDim2.new(0, 22, 0, 22)
-    switchKnob.Position         = UDim2.new(0, 3, 0.5, -11)
-    switchKnob.BackgroundColor3 = Color3.fromRGB(200, 205, 215)
-    Instance.new("UICorner", switchKnob).CornerRadius = UDim.new(1, 0)
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size               = UDim2.new(0.68,0,1,0)
+    lbl.Position           = UDim2.new(0,12,0,0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3         = Color3.fromRGB(225,232,248)
+    lbl.TextSize           = 13
+    lbl.Font               = Enum.Font.SourceSansSemibold
+    lbl.TextXAlignment     = Enum.TextXAlignment.Left
+    lbl.Text               = text
+    lbl.TextWrapped        = true
+
+    local track = Instance.new("Frame", row)
+    track.Size             = UDim2.new(0,52,0,28)
+    track.Position         = UDim2.new(1,-66,0.5,-14)
+    track.BackgroundColor3 = Color3.fromRGB(35,45,65)
+    track.BorderSizePixel  = 0
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1,0)
+
+    local knob = Instance.new("Frame", track)
+    knob.Size             = UDim2.new(0,22,0,22)
+    knob.Position         = UDim2.new(0,3,0.5,-11)
+    knob.BackgroundColor3 = Color3.fromRGB(190,200,215)
+    knob.BorderSizePixel  = 0
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+
+    local btn = Instance.new("TextButton", track)
+    btn.Size               = UDim2.new(1,0,1,0)
+    btn.BackgroundTransparency = 1
+    btn.Text               = ""
 
     local state = false
-    switchBg.MouseButton1Click:Connect(function()
+    btn.MouseButton1Click:Connect(function()
         state = not state
         if state then
-            switchBg.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
-            switchKnob.Position        = UDim2.new(1, -25, 0.5, -11)
-            switchKnob.BackgroundColor3= Color3.fromRGB(255, 255, 255)
+            track.BackgroundColor3 = Color3.fromRGB(0,140,255)
+            knob.Position          = UDim2.new(1,-25,0.5,-11)
+            knob.BackgroundColor3  = Color3.fromRGB(255,255,255)
         else
-            switchBg.BackgroundColor3 = Color3.fromRGB(35, 45, 65)
-            switchKnob.Position        = UDim2.new(0, 3, 0.5, -11)
-            switchKnob.BackgroundColor3= Color3.fromRGB(200, 205, 215)
+            track.BackgroundColor3 = Color3.fromRGB(35,45,65)
+            knob.Position          = UDim2.new(0,3,0.5,-11)
+            knob.BackgroundColor3  = Color3.fromRGB(190,200,215)
         end
-        SafeCall(callback, state)
+        pcall(onToggle, state)
     end)
 end
 
-local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
-    local row = Instance.new("Frame", page)
-    row.Size             = UDim2.new(1, 0, 0, 62)
-    row.BackgroundColor3 = Color3.fromRGB(16, 23, 36)
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+local function AddSlider(page, text, mn, mx, def, onChange)
+    local row = MakeRow(page, 66)
 
-    local label = Instance.new("TextLabel", row)
-    label.Size               = UDim2.new(1, -20, 0, 25)
-    label.Position           = UDim2.new(0, 14, 0, 6)
-    label.BackgroundTransparency = 1
-    label.TextColor3         = Color3.fromRGB(230, 235, 245)
-    label.TextSize           = 13
-    label.Font               = Enum.Font.SourceSansSemibold
-    label.TextXAlignment     = Enum.TextXAlignment.Left
-    label.Text               = labelText .. ": " .. defaultVal
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size               = UDim2.new(1,-20,0,26)
+    lbl.Position           = UDim2.new(0,12,0,5)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3         = Color3.fromRGB(225,232,248)
+    lbl.TextSize           = 13
+    lbl.Font               = Enum.Font.SourceSansSemibold
+    lbl.TextXAlignment     = Enum.TextXAlignment.Left
+    lbl.Text               = text..": "..def
 
-    local sliderBar = Instance.new("TextButton", row)
-    sliderBar.Size             = UDim2.new(1, -28, 0, 10)
-    sliderBar.Position         = UDim2.new(0, 14, 0, 38)
-    sliderBar.BackgroundColor3 = Color3.fromRGB(35, 45, 65)
-    sliderBar.Text             = ""
-    Instance.new("UICorner", sliderBar).CornerRadius = UDim.new(1, 0)
+    local barBg = Instance.new("Frame", row)
+    barBg.Size             = UDim2.new(1,-24,0,10)
+    barBg.Position         = UDim2.new(0,12,0,40)
+    barBg.BackgroundColor3 = Color3.fromRGB(30,40,60)
+    barBg.BorderSizePixel  = 0
+    Instance.new("UICorner", barBg).CornerRadius = UDim.new(1,0)
 
-    local sliderFill = Instance.new("Frame", sliderBar)
-    sliderFill.Size             = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
-    sliderFill.BorderSizePixel  = 0
-    Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+    local fill = Instance.new("Frame", barBg)
+    fill.Size             = UDim2.new((def-mn)/(mx-mn),0,1,0)
+    fill.BackgroundColor3 = Color3.fromRGB(0,140,255)
+    fill.BorderSizePixel  = 0
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
+
+    local hitbox = Instance.new("TextButton", barBg)
+    hitbox.Size               = UDim2.new(1,0,1,0)
+    hitbox.BackgroundTransparency = 1
+    hitbox.Text               = ""
 
     local dragging = false
-    sliderBar.MouseButton1Down:Connect(function() dragging = true end)
-
-    RegConn(UserInputService.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+    hitbox.MouseButton1Down:Connect(function() dragging=true end)
+    AddConn(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
     end))
-
-    RegConn(UserInputService.InputChanged:Connect(function(inp)
-        if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
-            local pct = math.clamp(
-                (inp.Position.X - sliderBar.AbsolutePosition.X) / sliderBar.AbsoluteSize.X,
-                0, 1
-            )
-            sliderFill.Size = UDim2.new(pct, 0, 1, 0)
-            local val = math.floor(minVal + (maxVal - minVal) * pct)
-            label.Text = labelText .. ": " .. val
-            SafeCall(callback, val)
+    AddConn(UserInputService.InputChanged:Connect(function(i)
+        if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then
+            local pct = math.clamp((i.Position.X - barBg.AbsolutePosition.X)/barBg.AbsoluteSize.X,0,1)
+            fill.Size = UDim2.new(pct,0,1,0)
+            local val = math.floor(mn+(mx-mn)*pct)
+            lbl.Text  = text..": "..val
+            pcall(onChange,val)
         end
     end))
 end
 
-local function AddButton(page, labelText, callback)
+local function AddButton(page, text, onClick)
     local btn = Instance.new("TextButton", page)
-    btn.Size             = UDim2.new(1, 0, 0, 42)
-    btn.BackgroundColor3 = Color3.fromRGB(16, 23, 36)
-    btn.TextColor3       = Color3.fromRGB(230, 235, 245)
+    btn.Size             = UDim2.new(1,0,0,44)
+    btn.BackgroundColor3 = Color3.fromRGB(0,85,185)
+    btn.TextColor3       = Color3.fromRGB(255,255,255)
     btn.TextSize         = 13
     btn.Font             = Enum.Font.SourceSansSemibold
-    btn.Text             = labelText
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-    btn.MouseButton1Click:Connect(function() SafeCall(callback) end)
+    btn.Text             = text
+    btn.BorderSizePixel  = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,9)
+    btn.MouseButton1Click:Connect(function() pcall(onClick) end)
+
+    btn.MouseEnter:Connect(function() btn.BackgroundColor3=Color3.fromRGB(0,110,230) end)
+    btn.MouseLeave:Connect(function() btn.BackgroundColor3=Color3.fromRGB(0,85,185) end)
 end
 
--- ============================================================
---  CACHE MOB (cập nhật 1s/lần - không quét trong frame)
--- ============================================================
+local function AddLabel(page, text)
+    local lbl = Instance.new("TextLabel", page)
+    lbl.Size               = UDim2.new(1,0,0,28)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3         = Color3.fromRGB(100,140,200)
+    lbl.TextSize           = 12
+    lbl.Font               = Enum.Font.SourceSansSemibold
+    lbl.Text               = "  "..text
+    lbl.TextXAlignment     = Enum.TextXAlignment.Left
+end
+
+-- ══════════════════════════════════════════════════════════
+-- CACHE QUÁI VẬT (quét workspace sâu hơn - GetDescendants)
+-- ══════════════════════════════════════════════════════════
 local cachedMobs = {}
-RegThread(function()
+AddThread(function()
     while HubAlive do
-        local newList = {}
-        SafeCall(function()
-            local char = LocalPlayer.Character
-            for _, obj in ipairs(Workspace:GetChildren()) do
-                if  obj:IsA("Model")
-                and obj ~= char
-                and obj:FindFirstChild("Humanoid")
-                and obj:FindFirstChild("HumanoidRootPart")
-                and not Players:GetPlayerFromCharacter(obj)
-                and obj.Humanoid.Health > 0
-                then
-                    table.insert(newList, obj)
+        local list = {}
+        local char = LocalPlayer.Character
+        -- Quét cả GetDescendants để tìm Model trong folder lồng nhau
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if  obj:IsA("Model")
+            and obj ~= char
+            and obj:FindFirstChild("Humanoid")
+            and obj:FindFirstChild("HumanoidRootPart")
+            and not Players:GetPlayerFromCharacter(obj)
+            then
+                if obj.Humanoid.Health > 0 then
+                    table.insert(list, obj)
                 end
             end
-        end)
-        cachedMobs = newList
+        end
+        cachedMobs = list
         task.wait(1)
     end
 end)
 
--- ============================================================
---  1. AUTO FARM  (Heartbeat — không có task.wait bên trong)
--- ============================================================
-local farmCooldown = 0
-RegConn(RunService.Heartbeat:Connect(function(dt)
-    if not autoFarmActive then return end
-    farmCooldown = farmCooldown - dt
-    if farmCooldown > 0 then return end
-    farmCooldown = 0.1  -- 10 lần/giây thay vì 60 lần/giây
+-- ══════════════════════════════════════════════════════════
+-- 1. AUTO FARM - Bay trên đầu, quái KHÔNG đánh được
+-- ══════════════════════════════════════════════════════════
+AddLabel(P1, "── AUTO FARM ──────────────────")
 
-    SafeCall(function()
-        local char = LocalPlayer.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChild("Humanoid")
-        if not hrp or not hum or hum.Health <= 0 then return end
+local farmTimer = 0
+AddConn(RunService.Heartbeat:Connect(function(dt)
+    if not S.AutoFarm then return end
+    farmTimer = farmTimer - dt
+    if farmTimer > 0 then return end
+    farmTimer = FARM_COOLDOWN
 
-        -- Tìm mục tiêu gần nhất trong cache
-        local target, minDist = nil, math.huge
-        for _, obj in ipairs(cachedMobs) do
-            if obj.Parent and obj.Humanoid.Health > 0 then
-                local d = (obj.HumanoidRootPart.Position - hrp.Position).Magnitude
-                if d < minDist then minDist = d ; target = obj end
-            end
+    local char,hrp,hum = GetChar()
+    if not char then return end
+
+    -- Tìm quái gần nhất trong cache
+    local target, minD = nil, math.huge
+    for _, obj in ipairs(cachedMobs) do
+        if obj and obj.Parent and obj.Humanoid.Health > 0 then
+            local d = (obj.HumanoidRootPart.Position - hrp.Position).Magnitude
+            if d < minD then minD=d ; target=obj end
         end
+    end
+    if not target then return end
 
-        if not target then return end
+    local targetHRP = target.HumanoidRootPart
 
-        -- Bay lên đầu mục tiêu
-        hrp.CFrame    = target.HumanoidRootPart.CFrame + Vector3.new(0, 6, 0)
-        hrp.Velocity  = Vector3.zero
+    -- Bay NGAY PHÍA TRÊN đầu quái (quái không tầm với được)
+    -- Mặt nhìn xuống quái để đánh trúng
+    local abovePos = targetHRP.Position + Vector3.new(0, FARM_HEIGHT, 0)
+    hrp.CFrame     = CFrame.new(abovePos, targetHRP.Position)
 
-        -- Lấy tool từ tay hoặc túi
-        local tool = char:FindFirstChildOfClass("Tool")
-        if not tool then
-            local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
-            if bp then tool = bp:FindFirstChildOfClass("Tool") end
-        end
-        if tool and tool.Parent ~= char then
-            hum:EquipTool(tool)
-        end
+    -- Khoá nhân vật không bị đẩy đi
+    hrp.Velocity        = Vector3.zero
+    hrp.RotVelocity     = Vector3.zero
 
-        if tool then
-            tool:Activate()
-        else
-            VirtualUser:Button1Down(Vector2.new(0, 0), Camera.CFrame)
-            VirtualUser:Button1Up(Vector2.new(0, 0), Camera.CFrame)
-        end
+    -- Đảm bảo không bị va chạm đẩy ra
+    hum.AutoRotate = false
+
+    -- ---- TỰ ĐỘNG ĐÁNH ----
+    -- Cách 1: Dùng Tool trong tay
+    local tool = char:FindFirstChildOfClass("Tool")
+
+    -- Nếu không có tool trong tay, lấy từ Backpack
+    if not tool then
+        local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+        if bp then tool = bp:FindFirstChildOfClass("Tool") end
+        if tool then hum:EquipTool(tool) end
+    end
+
+    if tool then
+        -- Kích hoạt tool (đánh bằng tool)
+        local remote = tool:FindFirstChildOfClass("RemoteEvent")
+            or tool:FindFirstChild("Handle") and tool.Handle:FindFirstChildOfClass("RemoteEvent")
+        pcall(function() tool:Activate() end)
+    else
+        -- Cách 2: Giả lập click chuột nếu không có tool
+        pcall(function()
+            VirtualUser:Button1Down(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2), Camera.CFrame)
+            VirtualUser:Button1Up(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2), Camera.CFrame)
+        end)
+    end
+
+    -- Camera nhìn vào quái
+    pcall(function()
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHRP.Position)
     end)
 end))
-AddToggle(Page1, "🤖 Auto Farm (Bay Trên Đầu & Tự Đánh)", function(val) autoFarmActive = val end)
 
--- ============================================================
---  2. AUTO QUEST
--- ============================================================
-RegThread(function()
+AddToggle(P1, "🤖 Auto Farm (Bay Trên Đầu - Quái Không Đánh Được)", function(v)
+    S.AutoFarm = v
+    local _,_,hum = GetChar()
+    if hum then hum.AutoRotate = not v end
+end)
+
+-- Slider điều chỉnh độ cao bay
+AddSlider(P1, "Độ Cao Bay Trên Đầu Quái", 5, 20, 8, function(v) FARM_HEIGHT = v end)
+
+-- ══════════════════════════════════════════════════════════
+-- 2. AUTO QUEST
+-- ══════════════════════════════════════════════════════════
+AddLabel(P1, "── AUTO QUEST ──────────────────")
+
+AddThread(function()
     while HubAlive do
         task.wait(1.5)
-        if not autoQuestActive then continue end
-        SafeCall(function()
-            local char = LocalPlayer.Character
-            if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-            for _, npc in ipairs(Workspace:GetChildren()) do
-                if npc.Name == QuestNPCName and npc:FindFirstChild("HumanoidRootPart") then
-                    char.HumanoidRootPart.CFrame = npc.HumanoidRootPart.CFrame + Vector3.new(0, 3, 3)
-                    local cd = npc:FindFirstChildWhichIsA("ClickDetector", true)
-                    if cd then fireclickdetector(cd) end
+        if not S.AutoQuest then continue end
+        pcall(function()
+            local char,hrp = GetChar()
+            if not char then return end
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == QuestNPCName and obj:FindFirstChild("HumanoidRootPart") then
+                    hrp.CFrame = obj.HumanoidRootPart.CFrame + Vector3.new(0,3,4)
+                    local cd = obj:FindFirstChildWhichIsA("ClickDetector", true)
+                    if cd then pcall(fireclickdetector, cd) end
                 end
             end
         end)
     end
 end)
-AddToggle(Page1, "📜 Auto Nhận Nhiệm Vụ (Auto Quest)", function(val) autoQuestActive = val end)
+AddToggle(P1, "📜 Auto Nhận Nhiệm Vụ (Auto Quest)", function(v) S.AutoQuest=v end)
 
--- ============================================================
---  3. AIMBOT (nhắm cả NPC + Player)
--- ============================================================
-RegConn(RunService.RenderStepped:Connect(function()
-    if not aimbotActive then return end
-    SafeCall(function()
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-        local hrpPos = char.HumanoidRootPart.Position
+-- ══════════════════════════════════════════════════════════
+-- 3. AIMBOT - Nhắm cả Player lẫn Mob
+-- ══════════════════════════════════════════════════════════
+AddLabel(P1, "── AIMBOT ────────────────────")
 
-        local closest, shortDist = nil, math.huge
+AddConn(RunService.RenderStepped:Connect(function()
+    if not S.Aimbot then return end
+    local char,hrp = GetChar()
+    if not char then return end
 
-        -- Nhắm Player
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                local hum = p.Character:FindFirstChild("Humanoid")
-                if hum and hum.Health > 0 then
-                    local d = (p.Character.HumanoidRootPart.Position - hrpPos).Magnitude
-                    if d < shortDist then shortDist = d ; closest = p.Character.HumanoidRootPart end
-                end
+    local closest, minD = nil, math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local h = p.Character:FindFirstChild("HumanoidRootPart")
+            local hm = p.Character:FindFirstChild("Humanoid")
+            if h and hm and hm.Health > 0 then
+                local d = (h.Position - hrp.Position).Magnitude
+                if d < minD then minD=d closest=h end
             end
         end
+    end
 
-        -- Nhắm Mob (dùng cache)
-        for _, obj in ipairs(cachedMobs) do
-            if obj.Parent and obj.Humanoid.Health > 0 then
-                local d = (obj.HumanoidRootPart.Position - hrpPos).Magnitude
-                if d < shortDist then shortDist = d ; closest = obj.HumanoidRootPart end
-            end
+    for _, obj in ipairs(cachedMobs) do
+        if obj.Parent then
+            local d = (obj.HumanoidRootPart.Position - hrp.Position).Magnitude
+            if d < minD then minD=d closest=obj.HumanoidRootPart end
         end
+    end
 
-        if closest then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
-        end
-    end)
+    if closest then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
+    end
 end))
-AddToggle(Page1, "🎯 Aimbot Tự Động Ngắm (Player + Mob)", function(val) aimbotActive = val end)
+AddToggle(P1, "🎯 Aimbot Tự Động Ngắm (Player + Mob)", function(v) S.Aimbot=v end)
 
--- ============================================================
---  4. NOCLIP — FIX: cache parts ngay khi script chạy
--- ============================================================
+-- ══════════════════════════════════════════════════════════
+-- 4. NOCLIP - Cache đúng từ đầu
+-- ══════════════════════════════════════════════════════════
+AddLabel(P1, "── NOCLIP ────────────────────")
+
 local noclipParts = {}
 
-local function RebuildNoclipCache(char)
+local function BuildNoclipCache(char)
     table.clear(noclipParts)
     for _, p in ipairs(char:GetDescendants()) do
         if p:IsA("BasePart") then table.insert(noclipParts, p) end
     end
-    -- Lắng nghe thêm part mới (vd: tool được trang bị)
-    RegConn(char.DescendantAdded:Connect(function(p)
-        if p:IsA("BasePart") then table.insert(noclipParts, p) end
-    end))
 end
 
--- Cache ngay lập tức cho character hiện tại (FIX BUG 1)
-if LocalPlayer.Character then
-    RebuildNoclipCache(LocalPlayer.Character)
-end
-RegConn(LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait() -- Đợi 1 frame để descendants load
-    RebuildNoclipCache(char)
+-- Chạy ngay với character hiện tại
+if LocalPlayer.Character then BuildNoclipCache(LocalPlayer.Character) end
+AddConn(LocalPlayer.CharacterAdded:Connect(function(c)
+    task.wait()
+    BuildNoclipCache(c)
 end))
 
-RegConn(RunService.Stepped:Connect(function()
-    if not noclipActive then return end
-    for _, part in ipairs(noclipParts) do
-        if part and part.Parent then
-            part.CanCollide = false
-        end
+AddConn(RunService.Stepped:Connect(function()
+    if not S.Noclip then return end
+    for _, p in ipairs(noclipParts) do
+        if p and p.Parent then p.CanCollide=false end
     end
 end))
-AddToggle(Page1, "👻 NoClip (Đi Xuyên Tường)", function(val) noclipActive = val end)
+AddToggle(P1, "👻 NoClip (Đi Xuyên Tường)", function(v) S.Noclip=v end)
 
--- ============================================================
---  ESP HELPERS
--- ============================================================
-local function updateESP(target, nameText, color)
+-- ══════════════════════════════════════════════════════════
+-- PAGE 2: ESP
+-- ══════════════════════════════════════════════════════════
+local function CreateESP(target, label, color)
     if not target or not target.Parent then return end
-    local hrp = target:FindFirstChild("HumanoidRootPart")
+    if target:FindFirstChild("PESP_UI") then return end
+
     local hum = target:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
+    if not hum then return end
 
     -- BillboardGui
-    local bg = target:FindFirstChild("PeterESP_UI")
-    if not bg then
-        bg = Instance.new("BillboardGui")
-        bg.Name        = "PeterESP_UI"
-        bg.Adornee     = target:FindFirstChild("Head") or hrp
-        bg.Size        = UDim2.new(0, 140, 0, 50)
-        bg.StudsOffset = Vector3.new(0, 2.8, 0)
-        bg.AlwaysOnTop = true
-        bg.Parent      = target
+    local bb = Instance.new("BillboardGui", target)
+    bb.Name        = "PESP_UI"
+    bb.Adornee     = target:FindFirstChild("Head") or target:FindFirstChild("HumanoidRootPart")
+    bb.Size        = UDim2.new(0,150,0,54)
+    bb.StudsOffset = Vector3.new(0,3,0)
+    bb.AlwaysOnTop = true
 
-        local txt = Instance.new("TextLabel", bg)
-        txt.Name                  = "NameLabel"
-        txt.Size                  = UDim2.new(1, 0, 0, 22)
-        txt.BackgroundTransparency= 1
-        txt.TextColor3            = color
-        txt.TextSize              = 13
-        txt.Font                  = Enum.Font.SourceSansBold
-        txt.TextStrokeTransparency= 0.4
+    local nameLbl = Instance.new("TextLabel", bb)
+    nameLbl.Name               = "NL"
+    nameLbl.Size               = UDim2.new(1,0,0,24)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.TextColor3         = color
+    nameLbl.TextSize           = 13
+    nameLbl.Font               = Enum.Font.SourceSansBold
+    nameLbl.TextStrokeTransparency = 0.3
+    nameLbl.Text               = label
 
-        local barBg = Instance.new("Frame", bg)
-        barBg.Name             = "HPBarBg"
-        barBg.Size             = UDim2.new(0, 90, 0, 6)
-        barBg.Position         = UDim2.new(0.5, -45, 0, 24)
-        barBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        barBg.BorderSizePixel  = 0
-        Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+    local barBg = Instance.new("Frame", bb)
+    barBg.Name             = "BBG"
+    barBg.Size             = UDim2.new(0,100,0,7)
+    barBg.Position         = UDim2.new(0.5,-50,0,26)
+    barBg.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    barBg.BorderSizePixel  = 0
+    Instance.new("UICorner", barBg).CornerRadius = UDim.new(1,0)
 
-        local barFill = Instance.new("Frame", barBg)
-        barFill.Name             = "HPBarFill"
-        barFill.Size             = UDim2.new(1, 0, 1, 0)
-        barFill.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
-        barFill.BorderSizePixel  = 0
-        Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
-    end
+    local barFill = Instance.new("Frame", barBg)
+    barFill.Name             = "BF"
+    barFill.BackgroundColor3 = Color3.fromRGB(50,220,80)
+    barFill.BorderSizePixel  = 0
+    Instance.new("UICorner", barFill).CornerRadius = UDim.new(1,0)
 
     -- Highlight
-    if not target:FindFirstChild("PeterESP_HL") then
-        local hl = Instance.new("Highlight")
-        hl.Name         = "PeterESP_HL"
-        hl.Adornee      = target
-        hl.FillColor    = color
-        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-        hl.Parent       = target
-    end
+    local hl = Instance.new("Highlight", target)
+    hl.Name         = "PESP_HL"
+    hl.Adornee      = target
+    hl.FillColor    = color
+    hl.FillTransparency = 0.6
+    hl.OutlineColor = Color3.fromRGB(255,255,255)
+    hl.OutlineTransparency = 0
+end
 
-    -- Cập nhật nội dung
-    local nameLbl = bg:FindFirstChild("NameLabel")
-    local fill    = bg:FindFirstChild("HPBarBg") and bg.HPBarBg:FindFirstChild("HPBarFill")
-    if nameLbl then
-        nameLbl.Text = string.format("%s [%d/%d]", nameText, math.floor(hum.Health), math.floor(hum.MaxHealth))
-    end
-    if fill and hum.MaxHealth > 0 then
-        fill.Size = UDim2.new(math.clamp(hum.Health / hum.MaxHealth, 0, 1), 0, 1, 0)
+local function UpdateESP(target, label, color)
+    CreateESP(target, label, color)
+    local bb  = target:FindFirstChild("PESP_UI")
+    local hum = target:FindFirstChildOfClass("Humanoid")
+    if not bb or not hum then return end
+
+    local nl = bb:FindFirstChild("NL")
+    local bf = bb:FindFirstChild("BBG") and bb.BBG:FindFirstChild("BF")
+    if nl then nl.Text = string.format("%s [%d/%d]", label, math.floor(hum.Health), math.floor(hum.MaxHealth)) end
+    if bf and hum.MaxHealth > 0 then
+        bf.Size = UDim2.new(math.clamp(hum.Health/hum.MaxHealth,0,1),0,1,0)
     end
 end
 
--- ============================================================
---  5. ESP NGƯỜI CHƠI
--- ============================================================
-RegThread(function()
+local function RemoveESP(target)
+    if not target then return end
+    local u = target:FindFirstChild("PESP_UI")
+    local h = target:FindFirstChild("PESP_HL")
+    if u then u:Destroy() end
+    if h then h:Destroy() end
+end
+
+-- 5. ESP NGƯỜI CHƠI (riêng biệt)
+AddLabel(P2, "── ESP NGƯỜI CHƠI ──────────────")
+AddThread(function()
+    while HubAlive do
+        task.wait(0.6)
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                if S.EspPlayer then
+                    UpdateESP(p.Character, "👤 "..p.Name, Color3.fromRGB(0,180,255))
+                else
+                    RemoveESP(p.Character)
+                end
+            end
+        end
+    end
+end)
+AddToggle(P2, "👥 ESP Người Chơi (Tên + Máu + Highlight)", function(v) S.EspPlayer=v end)
+
+-- 6. ESP QUÁI VẬT (riêng biệt)
+AddLabel(P2, "── ESP QUÁI VẬT ─────────────────")
+AddThread(function()
     while HubAlive do
         task.wait(0.8)
-        SafeCall(function()
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character then
-                    if espPlayerActive then
-                        updateESP(p.Character, "👤 " .. p.Name, Color3.fromRGB(0, 170, 255))
-                    else
-                        removeESP(p.Character)
-                    end
+        for _, obj in ipairs(cachedMobs) do
+            if obj and obj.Parent then
+                if S.EspMob then
+                    UpdateESP(obj, "👾 "..obj.Name, Color3.fromRGB(255,60,60))
+                else
+                    RemoveESP(obj)
                 end
             end
-        end)
-    end
-end)
-AddToggle(Page2, "👁️ ESP Người Chơi & Thanh Máu", function(val) espPlayerActive = val end)
-
--- ============================================================
---  6. ESP QUÁI VẬT
--- ============================================================
-RegThread(function()
-    while HubAlive do
-        task.wait(1)
-        SafeCall(function()
-            for _, obj in ipairs(cachedMobs) do
-                if obj.Parent then
-                    if espMobActive then
-                        updateESP(obj, "👾 " .. obj.Name, Color3.fromRGB(255, 50, 50))
-                    else
-                        removeESP(obj)
-                    end
-                end
-            end
-        end)
-    end
-end)
-AddToggle(Page2, "🎯 ESP Quái & Thanh Máu", function(val) espMobActive = val end)
-
--- ============================================================
---  7. NHÌN TRONG ĐÊM (FULLBRIGHT)
--- ============================================================
-AddToggle(Page2, "🔦 Nhìn Trong Đêm (Fullbright)", function(val)
-    Lighting.Brightness    = val and 2 or 1
-    Lighting.ClockTime     = val and 14 or 12
-    Lighting.FogEnd        = val and 100000 or 10000
-    Lighting.GlobalShadows = not val
-end)
-
--- ============================================================
---  8. CHẠY NHANH
--- ============================================================
-local currentSpeedValue = 50
-
-RegConn(RunService.RenderStepped:Connect(function()
-    if not speedActive then return end
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.WalkSpeed = currentSpeedValue
-    end
-end))
-
-AddToggle(Page3, "⚡ Bật/Tắt Chạy Nhanh", function(val)
-    speedActive = val
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.WalkSpeed = val and currentSpeedValue or 16
-    end
-end)
-AddSlider(Page3, "Tốc Độ Chạy (WalkSpeed)", 50, 200, 50, function(val)
-    currentSpeedValue = val
-    if speedActive then
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") then
-            char.Humanoid.WalkSpeed = val
         end
     end
 end)
+AddToggle(P2, "👾 ESP Quái Vật (Tên + Máu + Highlight)", function(v) S.EspMob=v end)
 
--- ============================================================
---  9. NHẢY CAO
--- ============================================================
-local currentJumpValue = 50
+-- 7. FULLBRIGHT
+AddLabel(P2, "── TẦM NHÌN ─────────────────────")
+local origBright, origClock, origFog, origShadow
+    = Lighting.Brightness, Lighting.ClockTime, Lighting.FogEnd, Lighting.GlobalShadows
 
-RegConn(RunService.RenderStepped:Connect(function()
-    if not jumpActive then return end
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.UseJumpPower = true
-        char.Humanoid.JumpPower    = currentJumpValue
+AddToggle(P2, "🔦 Nhìn Trong Đêm (Fullbright)", function(v)
+    if v then
+        Lighting.Brightness    = 3
+        Lighting.ClockTime     = 14
+        Lighting.FogEnd        = 999999
+        Lighting.GlobalShadows = false
+    else
+        Lighting.Brightness    = origBright
+        Lighting.ClockTime     = origClock
+        Lighting.FogEnd        = origFog
+        Lighting.GlobalShadows = origShadow
     end
+end)
+
+-- ══════════════════════════════════════════════════════════
+-- PAGE 3: TỐC ĐỘ & ĐỒ HỌA
+-- ══════════════════════════════════════════════════════════
+
+-- 8. TỐC ĐỘ
+AddLabel(P3, "── TỐC ĐỘ ────────────────────")
+AddConn(RunService.Heartbeat:Connect(function()
+    if not S.Speed then return end
+    local _,_,hum = GetChar()
+    if hum then hum.WalkSpeed = speedVal end
 end))
-
-AddToggle(Page3, "🦘 Bật/Tắt Nhảy Cao", function(val)
-    jumpActive = val
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.UseJumpPower = true
-        char.Humanoid.JumpPower    = val and currentJumpValue or 50
-    end
+AddToggle(P3, "⚡ Chạy Nhanh", function(v)
+    S.Speed = v
+    local _,_,hum = GetChar()
+    if hum then hum.WalkSpeed = v and speedVal or 16 end
 end)
-AddSlider(Page3, "Sức Nhảy Cao (JumpPower)", 50, 300, 50, function(val)
-    currentJumpValue = val
-    if jumpActive then
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") then
-            char.Humanoid.JumpPower = val
-        end
+AddSlider(P3, "WalkSpeed", 50, 250, 50, function(v)
+    speedVal = v
+    if S.Speed then
+        local _,_,hum = GetChar()
+        if hum then hum.WalkSpeed=v end
     end
 end)
 
--- ============================================================
---  10. FIX LAG CỰC MẠNH
--- ============================================================
-local connectionBoost = nil  -- Quản lý thủ công, KHÔNG dùng RegConn
+-- 9. NHẢY CAO
+AddLabel(P3, "── NHẢY ──────────────────────")
+AddConn(RunService.Heartbeat:Connect(function()
+    if not S.Jump then return end
+    local _,_,hum = GetChar()
+    if hum then hum.UseJumpPower=true hum.JumpPower=jumpVal end
+end))
+AddToggle(P3, "🦘 Nhảy Cao", function(v)
+    S.Jump = v
+    local _,_,hum = GetChar()
+    if hum then hum.UseJumpPower=true hum.JumpPower = v and jumpVal or 50 end
+end)
+AddSlider(P3, "JumpPower", 50, 400, 50, function(v)
+    jumpVal = v
+    if S.Jump then
+        local _,_,hum = GetChar()
+        if hum then hum.JumpPower=v end
+    end
+end)
 
-local function cleanPart(v, isOn)
+-- 10. FIX LAG CỰC MẠNH
+AddLabel(P3, "── FIX LAG ───────────────────")
+
+local function DestroyEffect(obj)
+    if  obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
+    or  obj:IsA("Fire") or obj:IsA("Sparkles")
+    or  obj:IsA("Trail") or obj:IsA("Beam")
+    or  obj:IsA("SelectionBox") or obj:IsA("BoxHandleAdornment")
+    or  obj:IsA("BillboardGui") and obj.Name ~= "PESP_UI"
+    then
+        pcall(function() obj.Enabled = false end)
+        pcall(function() obj:Destroy() end)
+    end
+end
+
+local function ApplyBoost(v, isOn)
     if not v or not v.Parent then return end
     if v:IsA("BasePart") then
-        v.Material    = isOn and Enum.Material.SmoothPlastic or Enum.Material.Plastic
-        v.Reflectance = 0
-        v.CastShadow  = false
+        if isOn then
+            v.Material    = Enum.Material.SmoothPlastic
+            v.Reflectance = 0
+            v.CastShadow  = false
+        end
     elseif v:IsA("Decal") or v:IsA("Texture") then
         v.Transparency = isOn and 1 or 0
-    elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Fire")
-        or v:IsA("Smoke") or v:IsA("Sparkles") or v:IsA("Beam") or v:IsA("Explosion")
+    elseif v:IsA("ParticleEmitter") or v:IsA("Trail")
+        or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles")
+        or v:IsA("Beam")
     then
         v.Enabled = not isOn
     end
 end
 
-AddToggle(Page3, "🔥 Fix Lag Cực Mạnh (Tối Ưu Đồ Họa)", function(val)
-    boostActive = val
+AddToggle(P3, "🔥 Fix Lag Cực Mạnh (Tối Ưu Đồ Họa Tối Đa)", function(val)
+    S.Boost = val
 
-    Lighting.GlobalShadows  = not val
-    Lighting.FogEnd         = val and 9e9 or 100000
-    Lighting.Brightness     = val and 2 or 1
+    -- Lighting
+    Lighting.GlobalShadows  = false
+    Lighting.FogEnd         = val and 9e9    or 100000
+    Lighting.Brightness     = val and 2      or 1
+    Lighting.ShadowSoftness = 0
     Lighting.OutdoorAmbient = val
-        and Color3.fromRGB(220, 220, 220)
-        or  Color3.fromRGB(128, 128, 128)
+        and Color3.fromRGB(230,230,230)
+        or  Color3.fromRGB(128,128,128)
 
-    for _, light in ipairs(Lighting:GetChildren()) do
-        if  light:IsA("PostEffect") or light:IsA("Atmosphere") or light:IsA("Sky")
-        or  light:IsA("BlurEffect") or light:IsA("SunRaysEffect") or light:IsA("ColorCorrectionEffect")
+    -- Tắt tất cả PostEffects, Atmosphere, Sky, Fog
+    for _, obj in ipairs(Lighting:GetDescendants()) do
+        if  obj:IsA("PostEffect") or obj:IsA("Atmosphere")
+        or  obj:IsA("Sky") or obj:IsA("BlurEffect")
+        or  obj:IsA("SunRaysEffect") or obj:IsA("ColorCorrectionEffect")
+        or  obj:IsA("DepthOfFieldEffect") or obj:IsA("BloomEffect")
         then
-            light.Enabled = not val
+            pcall(function() obj.Enabled = not val end)
         end
     end
 
-    SafeCall(function()
-        local terrain = Workspace:FindFirstChildOfClass("Terrain")
-        if terrain then
-            terrain.WaterWaveSize    = val and 0   or 1
-            terrain.WaterWaveSpeed   = val and 0   or 8
-            terrain.WaterTransparency= val and 1   or 0.3
-            terrain.WaterReflectance = val and 0   or 1
+    -- Terrain nước
+    pcall(function()
+        local t = workspace:FindFirstChildOfClass("Terrain")
+        if t and val then
+            t.WaterWaveSize    = 0
+            t.WaterWaveSpeed   = 0
+            t.WaterTransparency= 1
+            t.WaterReflectance = 0
         end
     end)
 
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        cleanPart(v, val)
+    -- Workspace quality settings
+    pcall(function()
+        if val then
+            workspace.StreamingEnabled = false
+        end
+    end)
+
+    -- Quét toàn bộ workspace
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        ApplyBoost(obj, val)
     end
 
+    -- Lắng nghe thêm object mới
     if val then
         if not connectionBoost then
-            connectionBoost = Workspace.DescendantAdded:Connect(function(v)
-                if boostActive then task.spawn(cleanPart, v, true) end
+            connectionBoost = workspace.DescendantAdded:Connect(function(obj)
+                if S.Boost then
+                    task.defer(function() ApplyBoost(obj, true) end)
+                end
             end)
         end
     else
@@ -765,14 +838,15 @@ AddToggle(Page3, "🔥 Fix Lag Cực Mạnh (Tối Ưu Đồ Họa)", function(v
     end
 end)
 
--- ============================================================
---  11. DỊCH CHUYỂN ĐẢO (TELEPORT)
--- ============================================================
-for islandName, pos in pairs(IslandList) do
-    AddButton(Page4, "🚀 Di chuyển tới: " .. islandName, function()
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            char.HumanoidRootPart.CFrame = CFrame.new(pos)
+-- ══════════════════════════════════════════════════════════
+-- PAGE 4: TELEPORT
+-- ══════════════════════════════════════════════════════════
+AddLabel(P4, "── DỊCH CHUYỂN ĐẢO ─────────────")
+for name, pos in pairs(IslandList) do
+    AddButton(P4, "🚀 "..name, function()
+        local _,hrp = GetChar()
+        if hrp then
+            hrp.CFrame = CFrame.new(pos + Vector3.new(0,5,0))
         end
     end)
 end
