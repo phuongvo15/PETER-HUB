@@ -1,4 +1,4 @@
--- PETER HUB - Phiên bản Tối Ưu Hóa Chống Lag Cho Máy Yếu
+-- PETER HUB - Phiên bản Tối Ưu Hóa & Fix Lag Cực Mạnh
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -264,18 +264,18 @@ local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
     end)
 end
 
--- 1. Auto Farm (Tối ưu chu kỳ thời gian chạy để đỡ nặng máy)
+-- 1. Auto Farm
 local autoFarmActive = false
 task.spawn(function()
     while true do
-        task.wait(0.4) -- Tăng độ trễ nhẹ giúp máy không bị nghẽn CPU
+        task.wait(0.4)
         if autoFarmActive then
             pcall(function()
                 local char = LocalPlayer.Character
                 if char and char:FindFirstChild("HumanoidRootPart") then
                     local target = nil
                     local minDist = math.huge
-                    for _, obj in ipairs(workspace:GetChildren()) do -- Chỉ quét tầng chính Workspace thay vì toàn bộ hệ thống con gây nặng
+                    for _, obj in ipairs(workspace:GetChildren()) do
                         if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
                             local isPlayer = Players:GetPlayerFromCharacter(obj)
                             if not isPlayer and obj ~= char and obj.Humanoid.Health > 0 then
@@ -314,7 +314,7 @@ task.spawn(function()
 end)
 AddToggle(Page1, "🤖 Auto Farm Quái (Tối Ưu Lag)", function(val) autoFarmActive = val end)
 
--- 2. Aimbot (Tối ưu hóa ngắt quãng khung hình)
+-- 2. Aimbot
 local aimbotActive = false
 RunService.RenderStepped:Connect(function()
     if aimbotActive then
@@ -360,7 +360,7 @@ RunService.Stepped:Connect(function()
 end)
 AddToggle(Page1, "👻 NoClip (Đi Xuyên Tường)", function(val) noclipActive = val end)
 
--- Hàm hỗ trợ ESP Nhẹ (Giảm tần suất vẽ giao diện để mượt máy)
+-- Hàm ESP
 local function updateESP(target, nameText, color)
     if not target or not target:FindFirstChild("HumanoidRootPart") then return end
     
@@ -428,7 +428,7 @@ local function removeESP(target)
     if target:FindFirstChild("PeterESP_HL") then target.PeterESP_HL:Destroy() end
 end
 
--- 4. ESP Người Chơi (Giãn chu kỳ 1 giây để không ngốn RAM)
+-- 4. ESP Người Chơi
 local espPlayerActive = false
 task.spawn(function()
     while true do
@@ -446,7 +446,7 @@ task.spawn(function()
 end)
 AddToggle(Page2, "👁️ ESP Người Chơi (Tối Ưu Mượt)", function(val) espPlayerActive = val end)
 
--- 5. ESP Quái (Giãn chu kỳ 1.5 giây, quét nhẹ nhàng)
+-- 5. ESP Quái
 local espMobActive = false
 task.spawn(function()
     while true do
@@ -541,28 +541,68 @@ AddSlider(Page3, "Sức Nhảy Cao (JumpPower)", 50, 300, 50, function(val)
     end
 end)
 
--- 9. Fix Lag Tối Đa (Xóa bóng tối, hiệu ứng và chuyển chất liệu sang nhựa mịn nhẹ máy)
-AddToggle(Page3, "🔥 Fix Lag Tối Đa (Ultra Boost)", function(val)
+-- 9. 🔥 Fix Lag Cực Mạnh (Ultra Extreme Boost + Tự động dọn dẹp vật thể mới sinh ra)
+local boostActive = false
+local connectionBoost = nil
+
+AddToggle(Page3, "🔥 Fix Lag Cực Mạnh (Ultra Boost + Auto Clear)", function(val)
+    boostActive = val
     Lighting.GlobalShadows = not val
     Lighting.FogEnd = val and 9e9 or 100000
     Lighting.Brightness = val and 2 or 1
     Lighting.OutdoorAmbient = val and Color3.fromRGB(200, 200, 200) or Color3.fromRGB(128, 128, 128)
     
+    -- Xóa hiệu ứng ánh sáng môi trường
     for _, light in ipairs(Lighting:GetChildren()) do
-        if light:IsA("PostEffect") or light:IsA("Atmosphere") or light:IsA("Sky") then
+        if light:IsA("PostEffect") or light:IsA("Atmosphere") or light:IsA("Sky") or light:IsA("BlurEffect") or light:IsA("SunRaysEffect") then
             light.Enabled = not val
         end
     end
 
-    for _, v in ipairs(workspace:GetDescendants()) do
+    -- Khử hiệu ứng nước nặng máy
+    pcall(function()
+        if workspace:FindFirstChildOfClass("Terrain") then
+            local terrain = workspace.Terrain
+            terrain.WaterWaveSize = val and 0 or 1
+            terrain.WaterWaveSpeed = val and 0 or 8
+            terrain.WaterTransparency = val and 1 or 0.3
+            terrain.WaterReflectance = val and 0 or 1
+        end
+    end)
+
+    -- Hàm xử lý tối ưu hóa từng vật thể
+    local function cleanPart(v)
         if v:IsA("BasePart") then
             v.Material = val and Enum.Material.SmoothPlastic or Enum.Material.Plastic
             v.Reflectance = 0
-            v.CastShadow = not val
+            v.CastShadow = false
         elseif v:IsA("Decal") or v:IsA("Texture") then
             v.Transparency = val and 1 or 0
-        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
+        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") or v:IsA("Beam") then
             v.Enabled = not val
+        end
+    end
+
+    -- Dọn sạch các vật thể hiện tại có trong bản đồ
+    for _, v in ipairs(workspace:GetDescendants()) do
+        cleanPart(v)
+    end
+
+    -- Tự động dọn dẹp liên tục các vật thể mới load/sinh ra trong game
+    if val then
+        if not connectionBoost then
+            connectionBoost = workspace.DescendantAdded:Connect(function(v)
+                if boostActive then
+                    task.spawn(function()
+                        cleanPart(v)
+                    end)
+                end
+            end)
+        end
+    else
+        if connectionBoost then
+            connectionBoost:Disconnect()
+            connectionBoost = nil
         end
     end
 end)
