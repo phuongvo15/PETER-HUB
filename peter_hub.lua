@@ -1,11 +1,21 @@
--- PETER HUB - Phiên bản Nâng Cấp Hoàn Chỉnh (Auto Farm Trên Đầu, Fix Lag Tối Đa, ESP Mượt Mà)
+-- PETER HUB PRO - PHIÊN BẢN NÂNG CẤP HOÀN CHỈNH TOÀN BỘ (FULL CODE)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
+local VirtualUser = game:GetService("VirtualUser")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Cấu hình Đảo & Nhiệm Vụ (Có thể thay đổi tùy chỉnh theo game của bạn)
+local IslandList = {
+    ["Đảo Khởi Đầu"] = Vector3.new(0, 5, 0),
+    ["Đảo Cướp Biển"] = Vector3.new(1000, 5, 1000),
+    ["Đảo Cát"] = Vector3.new(2500, 5, -1500),
+    ["Đảo Trời"] = Vector3.new(-4500, 500, 3500)
+}
+local QuestNPCName = "QuestGiver" -- Tên NPC nhận nhiệm vụ trong game
 
 if PlayerGui:FindFirstChild("PeterHubUI") then
     PlayerGui.PeterHubUI:Destroy()
@@ -40,8 +50,8 @@ ToggleStroke.Parent = ToggleBtn
 
 -- Khung giao diện chính
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 580, 0, 400)
-MainFrame.Position = UDim2.new(0.5, -290, 0.5, -200)
+MainFrame.Size = UDim2.new(0, 620, 0, 420)
+MainFrame.Position = UDim2.new(0.5, -310, 0.5, -210)
 MainFrame.BackgroundColor3 = Color3.fromRGB(10, 14, 22)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -63,8 +73,9 @@ ToggleBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = isOpen
 end)
 
--- Biến cờ kiểm soát toàn bộ vòng lặp tính năng
+-- Biến cờ kiểm soát toàn bộ tính năng
 local autoFarmActive = false
+local autoQuestActive = false
 local aimbotActive = false
 local noclipActive = false
 local espPlayerActive = false
@@ -77,7 +88,7 @@ local connectionBoost = nil
 -- Nút Tắt / Hủy Hub Hoàn Toàn ([X])
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 32, 0, 32)
-CloseBtn.Position = UDim2.new(1, -40, 0, 12)
+CloseBtn.Position = UDim2.new(1, -42, 0, 12)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
 CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 CloseBtn.TextSize = 14
@@ -91,6 +102,7 @@ CloseCorner.Parent = CloseBtn
 
 CloseBtn.MouseButton1Click:Connect(function()
     autoFarmActive = false
+    autoQuestActive = false
     aimbotActive = false
     noclipActive = false
     espPlayerActive = false
@@ -128,9 +140,9 @@ local HubTitle = Instance.new("TextLabel")
 HubTitle.Size = UDim2.new(1, 0, 0, 55)
 HubTitle.BackgroundTransparency = 1
 HubTitle.TextColor3 = Color3.fromRGB(0, 150, 255)
-HubTitle.TextSize = 17
+HubTitle.TextSize = 16
 HubTitle.Font = Enum.Font.SourceSansBold
-HubTitle.Text = "⚡ PETER HUB PRO"
+HubTitle.Text = "⚡ PETER HUB PRO V2"
 HubTitle.Parent = Sidebar
 
 local SidebarList = Instance.new("UIListLayout")
@@ -151,7 +163,7 @@ local function CreatePage(name)
     page.Size = UDim2.new(1, -20, 1, -20)
     page.Position = UDim2.new(0, 10, 0, 10)
     page.BackgroundTransparency = 1
-    page.CanvasSize = UDim2.new(0, 0, 0, 500)
+    page.CanvasSize = UDim2.new(0, 0, 0, 600)
     page.ScrollBarThickness = 3
     page.Visible = false
     page.Parent = ContentArea
@@ -166,7 +178,7 @@ local function CreatePage(name)
     btn.Position = UDim2.new(0, 6, 0, 0)
     btn.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
     btn.TextColor3 = Color3.fromRGB(200, 210, 230)
-    btn.TextSize = 14
+    btn.TextSize = 13
     btn.Font = Enum.Font.SourceSansSemibold
     btn.Text = name
     btn.Parent = Sidebar
@@ -187,10 +199,11 @@ end
 local Page1 = CreatePage("⚡ Auto & Chiến Đấu")
 local Page2 = CreatePage("👁️ ESP & Tầm Nhìn")
 local Page3 = CreatePage("🛠️ Tốc Độ & Đồ Họa")
+local Page4 = CreatePage("🗺️ Dịch Chuyển Đảo")
 
 Page1.Visible = true
 
--- Hàm Toggle
+-- Hàm Toggle UI Helper
 local function AddToggle(page, labelText, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, 0, 0, 46)
@@ -206,7 +219,7 @@ local function AddToggle(page, labelText, callback)
     label.Position = UDim2.new(0, 14, 0, 0)
     label.BackgroundTransparency = 1
     label.TextColor3 = Color3.fromRGB(230, 235, 245)
-    label.TextSize = 14
+    label.TextSize = 13
     label.Font = Enum.Font.SourceSansSemibold
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Text = labelText
@@ -249,7 +262,7 @@ local function AddToggle(page, labelText, callback)
     end)
 end
 
--- Hàm Slider
+-- Hàm Slider UI Helper
 local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, 0, 0, 62)
@@ -265,7 +278,7 @@ local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
     label.Position = UDim2.new(0, 14, 0, 6)
     label.BackgroundTransparency = 1
     label.TextColor3 = Color3.fromRGB(230, 235, 245)
-    label.TextSize = 14
+    label.TextSize = 13
     label.Font = Enum.Font.SourceSansSemibold
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Text = labelText .. ": " .. defaultVal
@@ -308,62 +321,99 @@ local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
             local pos = math.clamp((input.Position.X - sliderBar.AbsolutePosition.X) / sliderBar.AbsoluteSize.X, 0, 1)
             sliderFill.Size = UDim2.new(pos, 0, 1, 0)
             local val = math.floor(minVal + (maxVal - minVal) * pos)
-            label.Text = labelText .. ": " + val -- fixed string cat
             label.Text = labelText .. ": " .. val
             callback(val)
         end
     end)
 end
 
--- 1. Auto Farm Quái (Bay trên đầu quái, sửa lỗi đòn đánh & tối ưu tool)
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if autoFarmActive then
-            pcall(function()
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
-                    local target = nil
-                    local minDist = math.huge
-                    for _, obj in ipairs(workspace:GetChildren()) do
-                        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
-                            local isPlayer = Players:GetPlayerFromCharacter(obj)
-                            if not isPlayer and obj ~= char and obj.Humanoid.Health > 0 then
-                                local dist = (obj.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
-                                if dist < minDist then
-                                    minDist = dist
-                                    target = obj
-                                end
+-- Hàm Nút bấm Thường (Dành cho Teleport)
+local function AddButton(page, labelText, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 42)
+    btn.BackgroundColor3 = Color3.fromRGB(16, 23, 36)
+    btn.TextColor3 = Color3.fromRGB(230, 235, 245)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.SourceSansSemibold
+    btn.Text = labelText
+    btn.Parent = page
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = btn
+
+    btn.MouseButton1Click:Connect(callback)
+end
+
+-- 1. Auto Farm Quái (Bay trên đầu quái, tối ưu hóa tấn công bằng Heartbeat)
+RunService.Heartbeat:Connect(function()
+    if autoFarmActive then
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                local target = nil
+                local minDist = math.huge
+                for _, obj in ipairs(workspace:GetChildren()) do
+                    if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
+                        local isPlayer = Players:GetPlayerFromCharacter(obj)
+                        if not isPlayer and obj ~= char and obj.Humanoid.Health > 0 then
+                            local dist = (obj.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
+                            if dist < minDist then
+                                minDist = dist
+                                target = obj
+                            end
+                        end
+                    end
+                end
+                
+                if target and target:FindFirstChild("HumanoidRootPart") then
+                    -- Bay trên đầu quái 6 studs né đòn hoàn toàn
+                    char.HumanoidRootPart.CFrame = target.HumanoidRootPart.CFrame + Vector3.new(0, 6, 0)
+                    char.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                    
+                    -- Trang bị hoặc kích hoạt tool tấn công
+                    local tool = char:FindFirstChildOfClass("Tool")
+                    if not tool then
+                        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+                        if backpack then
+                            local t = backpack:FindFirstChildOfClass("Tool")
+                            if t then 
+                                char.Humanoid:EquipTool(t) 
+                                task.wait(0.05)
+                                tool = char:FindFirstChildOfClass("Tool")
                             end
                         end
                     end
                     
-                    if target and target:FindFirstChild("HumanoidRootPart") then
-                        -- Bay trên đầu quái 6 studs để né sát thương cận chiến hoàn toàn
-                        char.HumanoidRootPart.CFrame = target.HumanoidRootPart.CFrame + Vector3.new(0, 6, 0)
-                        char.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
-                        
-                        -- Tự động lấy tool từ túi đồ hoặc trang bị lại nếu tuột tay
-                        local tool = char:FindFirstChildOfClass("Tool")
-                        if not tool then
-                            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-                            if backpack then
-                                local t = backpack:FindFirstChildOfClass("Tool")
-                                if t then 
-                                    char.Humanoid:EquipTool(t) 
-                                    task.wait(0.05)
-                                    tool = char:FindFirstChildOfClass("Tool")
-                                end
+                    if tool then
+                        tool:Activate()
+                    else
+                        VirtualUser:Button1Down(Vector2.new(0,0), Camera.CFrame)
+                        task.wait(0.05)
+                        VirtualUser:Button1Up(Vector2.new(0,0), Camera.CFrame)
+                    end
+                end
+            end
+        end)
+    end
+end)
+AddToggle(Page1, "🤖 Auto Farm (Bay Trên Đầu Né Đòn)", function(val) autoFarmActive = val end)
+
+-- 2. Auto Quest (Tự động nhận nhiệm vụ từ NPC)
+task.spawn(function()
+    while true do
+        task.wait(1.5)
+        if autoQuestActive then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    for _, npc in ipairs(workspace:GetChildren()) do
+                        if npc.Name == QuestNPCName and npc:FindFirstChild("HumanoidRootPart") then
+                            char.HumanoidRootPart.CFrame = npc.HumanoidRootPart.CFrame + Vector3.new(0, 3, 3)
+                            local cd = npc:FindFirstChildWhichIsA("ClickDetector", true)
+                            if cd then
+                                fireclickdetector(cd)
                             end
-                        end
-                        
-                        if tool then
-                            tool:Activate()
-                        else
-                            local vu = game:GetService("VirtualUser")
-                            vu:Button1Down(Vector2.new(0,0), Camera.CFrame)
-                            task.wait(0.05)
-                            vu:Button1Up(Vector2.new(0,0), Camera.CFrame)
                         end
                     end
                 end
@@ -371,9 +421,9 @@ task.spawn(function()
         end
     end
 end)
-AddToggle(Page1, "🤖 Auto Farm (Bay Trên Đầu Né Đòn)", function(val) autoFarmActive = val end)
+AddToggle(Page1, "📜 Auto Nhận Nhiệm Vụ (Auto Quest)", function(val) autoQuestActive = val end)
 
--- 2. Aimbot
+-- 3. Aimbot
 RunService.RenderStepped:Connect(function()
     if aimbotActive then
         pcall(function()
@@ -402,7 +452,7 @@ RunService.RenderStepped:Connect(function()
 end)
 AddToggle(Page1, "🎯 Aimbot Tự Động Ngắm", function(val) aimbotActive = val end)
 
--- 3. NoClip
+-- 4. NoClip
 RunService.Stepped:Connect(function()
     if noclipActive then
         local char = LocalPlayer.Character
@@ -417,7 +467,7 @@ RunService.Stepped:Connect(function()
 end)
 AddToggle(Page1, "👻 NoClip (Đi Xuyên Tường)", function(val) noclipActive = val end)
 
--- Hàm ESP Nâng Cấp (Hiển thị tên, loại và thanh máu mượt mà)
+-- Hàm ESP Chung (Tên, Thanh máu, Highlight)
 local function updateESP(target, nameText, color)
     if not target or not target:FindFirstChild("HumanoidRootPart") then return end
     
@@ -493,7 +543,7 @@ local function removeESP(target)
     if target:FindFirstChild("PeterESP_HL") then target.PeterESP_HL:Destroy() end
 end
 
--- 4. ESP Người Chơi
+-- 5. ESP Người Chơi
 task.spawn(function()
     while true do
         task.wait(0.8)
@@ -510,7 +560,7 @@ task.spawn(function()
 end)
 AddToggle(Page2, "👁️ ESP Người Chơi & Thanh Máu", function(val) espPlayerActive = val end)
 
--- 5. ESP Quái
+-- 6. ESP Quái
 task.spawn(function()
     while true do
         task.wait(1)
@@ -537,7 +587,7 @@ task.spawn(function()
 end)
 AddToggle(Page2, "🎯 ESP Quái & Thanh Máu", function(val) espMobActive = val end)
 
--- 6. Nhìn Trong Đêm
+-- 7. Nhìn Trong Đêm
 AddToggle(Page2, "🔦 Nhìn Trong Đêm (Fullbright)", function(val)
     Lighting.Brightness = val and 2 or 1
     Lighting.ClockTime = val and 14 or 12
@@ -545,7 +595,7 @@ AddToggle(Page2, "🔦 Nhìn Trong Đêm (Fullbright)", function(val)
     Lighting.GlobalShadows = not val
 end)
 
--- 7. Chạy Nhanh
+-- 8. Chạy Nhanh
 local currentSpeedValue = 50
 RunService.RenderStepped:Connect(function()
     if speedActive then
@@ -572,7 +622,7 @@ AddSlider(Page3, "Tốc Độ Chạy (WalkSpeed)", 50, 200, 50, function(val)
     end
 end)
 
--- 8. Nhảy Cao
+-- 9. Nhảy Cao
 local currentJumpValue = 50
 RunService.RenderStepped:Connect(function()
     if jumpActive then
@@ -602,7 +652,7 @@ AddSlider(Page3, "Sức Nhảy Cao (JumpPower)", 50, 300, 50, function(val)
     end
 end)
 
--- 9. Fix Lag Cực Mạnh (Ultra Boost Cực Đỉnh - Giúp máy chạy mượt mà tối đa)
+-- 10. Fix Lag Cực Mạnh
 AddToggle(Page3, "🔥 Fix Lag Cực Mạnh (Tối Ưu Hóa Tối Đa)", function(val)
     boostActive = val
     Lighting.GlobalShadows = not val
@@ -659,3 +709,19 @@ AddToggle(Page3, "🔥 Fix Lag Cực Mạnh (Tối Ưu Hóa Tối Đa)", functio
         end
     end
 end)
+
+-- 11. Các nút Dịch Chuyển Đảo (Teleport)
+local function TeleportTo(pos)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.CFrame = CFrame.new(pos)
+        end
+    end)
+end
+
+for islandName, pos in pairs(IslandList) do
+    AddButton(Page4, "🚀 Di chuyển tới: " .. islandName, function()
+        TeleportTo(pos)
+    end)
+end
