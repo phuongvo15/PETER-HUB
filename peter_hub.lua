@@ -1,4 +1,4 @@
--- PETER HUB - Phiên bản Tối Ưu & Giao Diện Đỉnh Cao
+-- PETER HUB - Phiên bản Tối Ưu Hóa Chống Lag Cho Máy Yếu
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -7,7 +7,6 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Xóa bảng cũ nếu đã tồn tại để tránh trùng lặp
 if PlayerGui:FindFirstChild("PeterHubUI") then
     PlayerGui.PeterHubUI:Destroy()
 end
@@ -17,7 +16,7 @@ ScreenGui.Name = "PeterHubUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
 
--- ==================== 1. NÚT NỔI MỞ/ĐÓNG MENU ====================
+-- Nút nổi mở/đóng menu
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 52, 0, 52)
 ToggleBtn.Position = UDim2.new(0, 20, 0.4, 0)
@@ -39,7 +38,7 @@ ToggleStroke.Color = Color3.fromRGB(100, 180, 255)
 ToggleStroke.Thickness = 2
 ToggleStroke.Parent = ToggleBtn
 
--- ==================== 2. KHUNG GIAO DIỆN CHÍNH ====================
+-- Khung giao diện chính
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 580, 0, 400)
 MainFrame.Position = UDim2.new(0.5, -290, 0.5, -200)
@@ -64,7 +63,7 @@ ToggleBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = isOpen
 end)
 
--- ==================== 3. THANH ĐIỀU HƯỚNG BÊN TRÁI (SIDEBAR) ====================
+-- Sidebar
 local Sidebar = Instance.new("Frame")
 Sidebar.Size = UDim2.new(0, 160, 1, 0)
 Sidebar.BackgroundColor3 = Color3.fromRGB(6, 9, 15)
@@ -89,7 +88,7 @@ SidebarList.SortOrder = Enum.SortOrder.LayoutOrder
 SidebarList.Padding = UDim.new(0, 6)
 SidebarList.Parent = Sidebar
 
--- ==================== 4. KHUNG NỘI DUNG (CONTENT AREA) ====================
+-- Nội dung (Content Area)
 local ContentArea = Instance.new("Frame")
 ContentArea.Size = UDim2.new(1, -160, 1, 0)
 ContentArea.Position = UDim2.new(0, 160, 0, 0)
@@ -141,7 +140,7 @@ local Page3 = CreatePage("🛠️ Tốc Độ & Đồ Họa")
 
 Page1.Visible = true
 
--- Hàm tạo nút gạt (Toggle Switch)
+-- Hàm Toggle
 local function AddToggle(page, labelText, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, 0, 0, 46)
@@ -200,7 +199,7 @@ local function AddToggle(page, labelText, callback)
     end)
 end
 
--- Hàm tạo thanh trượt (Slider)
+-- Hàm Slider
 local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, 0, 0, 62)
@@ -265,24 +264,47 @@ local function AddSlider(page, labelText, minVal, maxVal, defaultVal, callback)
     end)
 end
 
--- ==================== 5. CÁC TÍNH NĂNG CHÍNH ====================
-
--- 1. Auto Farm Quái
+-- 1. Auto Farm (Tối ưu chu kỳ thời gian chạy để đỡ nặng máy)
 local autoFarmActive = false
 task.spawn(function()
     while true do
-        task.wait(0.3)
+        task.wait(0.4) -- Tăng độ trễ nhẹ giúp máy không bị nghẽn CPU
         if autoFarmActive then
             pcall(function()
                 local char = LocalPlayer.Character
                 if char and char:FindFirstChild("HumanoidRootPart") then
-                    for _, obj in ipairs(workspace:GetDescendants()) do
+                    local target = nil
+                    local minDist = math.huge
+                    for _, obj in ipairs(workspace:GetChildren()) do -- Chỉ quét tầng chính Workspace thay vì toàn bộ hệ thống con gây nặng
                         if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
                             local isPlayer = Players:GetPlayerFromCharacter(obj)
                             if not isPlayer and obj ~= char and obj.Humanoid.Health > 0 then
-                                char.HumanoidRootPart.CFrame = obj.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
-                                break
+                                local dist = (obj.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
+                                if dist < minDist then
+                                    minDist = dist
+                                    target = obj
+                                end
                             end
+                        end
+                    end
+                    
+                    if target and target:FindFirstChild("HumanoidRootPart") then
+                        char.HumanoidRootPart.CFrame = target.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+                        local tool = char:FindFirstChildOfClass("Tool")
+                        if not tool then
+                            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+                            if backpack then
+                                local t = backpack:FindFirstChildOfClass("Tool")
+                                if t then char.Humanoid:EquipTool(t) end
+                            end
+                        end
+                        if tool then
+                            tool:Activate()
+                        else
+                            local vu = game:GetService("VirtualUser")
+                            vu:Button1Down(Vector2.new(0,0), Camera.CFrame)
+                            task.wait(0.05)
+                            vu:Button1Up(Vector2.new(0,0), Camera.CFrame)
                         end
                     end
                 end
@@ -290,12 +312,9 @@ task.spawn(function()
         end
     end
 end)
+AddToggle(Page1, "🤖 Auto Farm Quái (Tối Ưu Lag)", function(val) autoFarmActive = val end)
 
-AddToggle(Page1, "🤖 Auto Farm Quái", function(val)
-    autoFarmActive = val
-end)
-
--- 2. Aimbot (Tự động ngắm)
+-- 2. Aimbot (Tối ưu hóa ngắt quãng khung hình)
 local aimbotActive = false
 RunService.RenderStepped:Connect(function()
     if aimbotActive then
@@ -305,7 +324,7 @@ RunService.RenderStepped:Connect(function()
             local char = LocalPlayer.Character
             if not char or not char:FindFirstChild("HumanoidRootPart") then return end
             
-            for _, obj in ipairs(workspace:GetDescendants()) do
+            for _, obj in ipairs(workspace:GetChildren()) do
                 if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
                     if obj ~= char and obj.Humanoid.Health > 0 then
                         local dist = (obj.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
@@ -323,12 +342,9 @@ RunService.RenderStepped:Connect(function()
         end)
     end
 end)
+AddToggle(Page1, "🎯 Aimbot Tự Động Ngắm", function(val) aimbotActive = val end)
 
-AddToggle(Page1, "🎯 Aimbot Tự Động Ngắm", function(val)
-    aimbotActive = val
-end)
-
--- 3. NoClip (Đi xuyên tường)
+-- 3. NoClip
 local noclipActive = false
 RunService.Stepped:Connect(function()
     if noclipActive then
@@ -342,100 +358,131 @@ RunService.Stepped:Connect(function()
         end
     end
 end)
+AddToggle(Page1, "👻 NoClip (Đi Xuyên Tường)", function(val) noclipActive = val end)
 
-AddToggle(Page1, "👻 NoClip (Đi Xuyên Tường)", function(val)
-    noclipActive = val
-end)
+-- Hàm hỗ trợ ESP Nhẹ (Giảm tần suất vẽ giao diện để mượt máy)
+local function updateESP(target, nameText, color)
+    if not target or not target:FindFirstChild("HumanoidRootPart") then return end
+    
+    local bg = target:FindFirstChild("PeterESP_UI")
+    if not bg then
+        bg = Instance.new("BillboardGui")
+        bg.Name = "PeterESP_UI"
+        bg.Adornee = target:FindFirstChild("Head") or target.HumanoidRootPart
+        bg.Size = UDim2.new(0, 120, 0, 40)
+        bg.StudsOffset = Vector3.new(0, 2.5, 0)
+        bg.AlwaysOnTop = true
+        bg.Parent = target
 
--- 4. ESP Người Chơi
+        local txt = Instance.new("TextLabel")
+        txt.Name = "NameLabel"
+        txt.Size = UDim2.new(1, 0, 0, 20)
+        txt.BackgroundTransparency = 1
+        txt.TextColor3 = color
+        txt.TextSize = 12
+        txt.Font = Enum.Font.SourceSansBold
+        txt.TextStrokeTransparency = 0.5
+        txt.Parent = bg
+
+        local barBg = Instance.new("Frame")
+        barBg.Name = "HPBarBg"
+        barBg.Size = UDim2.new(0, 80, 0, 5)
+        barBg.Position = UDim2.new(0.5, -40, 0, 21)
+        barBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        barBg.BorderSizePixel = 0
+        barBg.Parent = bg
+
+        local barFill = Instance.new("Frame")
+        barFill.Name = "HPBarFill"
+        barFill.Size = UDim2.new(1, 0, 1, 0)
+        barFill.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        barFill.BorderSizePixel = 0
+        barFill.Parent = barBg
+    end
+
+    local hl = target:FindFirstChild("PeterESP_HL")
+    if not hl then
+        hl = Instance.new("Highlight")
+        hl.Name = "PeterESP_HL"
+        hl.Adornee = target
+        hl.FillColor = color
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.Parent = target
+    end
+
+    local hum = target:FindFirstChildOfClass("Humanoid")
+    if hum and bg then
+        local nameLbl = bg:FindFirstChild("NameLabel")
+        local fill = bg:FindFirstChild("HPBarBg") and bg.HPBarBg:FindFirstChild("HPBarFill")
+        if nameLbl then
+            nameLbl.Text = nameText .. " [" .. math.floor(hum.Health) .. "]"
+        end
+        if fill and hum.MaxHealth > 0 then
+            fill.Size = UDim2.new(math.clamp(hum.Health / hum.MaxHealth, 0, 1), 0, 1, 0)
+        end
+    end
+end
+
+local function removeESP(target)
+    if target:FindFirstChild("PeterESP_UI") then target.PeterESP_UI:Destroy() end
+    if target:FindFirstChild("PeterESP_HL") then target.PeterESP_HL:Destroy() end
+end
+
+-- 4. ESP Người Chơi (Giãn chu kỳ 1 giây để không ngốn RAM)
 local espPlayerActive = false
 task.spawn(function()
     while true do
         task.wait(1)
-        if espPlayerActive then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character then
-                    if not p.Character:FindFirstChild("PeterPlayerHighlight") then
-                        local hl = Instance.new("Highlight")
-                        hl.Name = "PeterPlayerHighlight"
-                        hl.Adornee = p.Character
-                        hl.FillColor = Color3.fromRGB(0, 150, 255)
-                        hl.Parent = p.Character
-                    end
-                end
-            end
-        else
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p.Character and p.Character:FindFirstChild("PeterPlayerHighlight") then
-                    p.Character.PeterPlayerHighlight:Destroy()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                if espPlayerActive then
+                    updateESP(p.Character, p.Name, Color3.fromRGB(0, 170, 255))
+                else
+                    removeESP(p.Character)
                 end
             end
         end
     end
 end)
+AddToggle(Page2, "👁️ ESP Người Chơi (Tối Ưu Mượt)", function(val) espPlayerActive = val end)
 
-AddToggle(Page2, "👁️ ESP Người Chơi (Xanh)", function(val)
-    espPlayerActive = val
-end)
-
--- 5. ESP Quái
+-- 5. ESP Quái (Giãn chu kỳ 1.5 giây, quét nhẹ nhàng)
 local espMobActive = false
 task.spawn(function()
     while true do
-        task.wait(1)
+        task.wait(1.5)
         if espMobActive then
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") then
+            for _, obj in ipairs(workspace:GetChildren()) do
+                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
                     local isPlayer = Players:GetPlayerFromCharacter(obj)
-                    if not isPlayer and not obj:FindFirstChild("PeterMobHighlight") then
-                        local hl = Instance.new("Highlight")
-                        hl.Name = "PeterMobHighlight"
-                        hl.Adornee = obj
-                        hl.FillColor = Color3.fromRGB(255, 0, 0)
-                        hl.Parent = obj
+                    if not isPlayer then
+                        updateESP(obj, obj.Name, Color3.fromRGB(255, 50, 50))
                     end
                 end
             end
         else
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj:FindFirstChild("PeterMobHighlight") then
-                    obj.PeterMobHighlight:Destroy()
+            for _, obj in ipairs(workspace:GetChildren()) do
+                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") then
+                    local isPlayer = Players:GetPlayerFromCharacter(obj)
+                    if not isPlayer then
+                        removeESP(obj)
+                    end
                 end
             end
         end
     end
 end)
+AddToggle(Page2, "🎯 ESP Quái / Mục Tiêu (Tối Ưu Mượt)", function(val) espMobActive = val end)
 
-AddToggle(Page2, "🎯 ESP Quái / Mục Tiêu (Đỏ)", function(val)
-    espMobActive = val
-end)
-
--- 6. Nhìn Trong Đêm (Fullbright)
-local fullbrightActive = false
-Lighting.Changed:Connect(function()
-    if fullbrightActive then
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 14
-        Lighting.FogEnd = 100000
-        Lighting.GlobalShadows = false
-    end
-end)
-
+-- 6. Nhìn Trong Đêm
 AddToggle(Page2, "🔦 Nhìn Trong Đêm (Fullbright)", function(val)
-    fullbrightActive = val
-    if val then
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 14
-        Lighting.FogEnd = 100000
-        Lighting.GlobalShadows = false
-    else
-        Lighting.Brightness = 1
-        Lighting.ClockTime = 12
-        Lighting.GlobalShadows = true
-    end
+    Lighting.Brightness = val and 2 or 1
+    Lighting.ClockTime = val and 14 or 12
+    Lighting.FogEnd = val and 100000 or 10000
+    Lighting.GlobalShadows = not val
 end)
 
--- 7. Chạy Nhanh (WalkSpeed kèm Bật/Tắt)
+-- 7. Chạy Nhanh
 local speedActive = false
 local currentSpeedValue = 50
 RunService.RenderStepped:Connect(function()
@@ -446,7 +493,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
-
 AddToggle(Page3, "⚡ Bật/Tắt Chạy Nhanh", function(val)
     speedActive = val
     local char = LocalPlayer.Character
@@ -454,7 +500,6 @@ AddToggle(Page3, "⚡ Bật/Tắt Chạy Nhanh", function(val)
         char.Humanoid.WalkSpeed = val and currentSpeedValue or 16
     end
 end)
-
 AddSlider(Page3, "Tốc Độ Chạy (WalkSpeed)", 50, 200, 50, function(val)
     currentSpeedValue = val
     if speedActive then
@@ -465,7 +510,7 @@ AddSlider(Page3, "Tốc Độ Chạy (WalkSpeed)", 50, 200, 50, function(val)
     end
 end)
 
--- 8. Nhảy Cao (JumpPower kèm Bật/Tắt)
+-- 8. Nhảy Cao
 local jumpActive = false
 local currentJumpValue = 50
 RunService.RenderStepped:Connect(function()
@@ -477,7 +522,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
-
 AddToggle(Page3, "🦘 Bật/Tắt Nhảy Cao", function(val)
     jumpActive = val
     local char = LocalPlayer.Character
@@ -486,7 +530,6 @@ AddToggle(Page3, "🦘 Bật/Tắt Nhảy Cao", function(val)
         char.Humanoid.JumpPower = val and currentJumpValue or 50
     end
 end)
-
 AddSlider(Page3, "Sức Nhảy Cao (JumpPower)", 50, 300, 50, function(val)
     currentJumpValue = val
     if jumpActive then
@@ -498,16 +541,24 @@ AddSlider(Page3, "Sức Nhảy Cao (JumpPower)", 50, 300, 50, function(val)
     end
 end)
 
--- 9. Tối Ưu / Fix Lag Cực Mạnh (Ultra Boost)
+-- 9. Fix Lag Tối Đa (Xóa bóng tối, hiệu ứng và chuyển chất liệu sang nhựa mịn nhẹ máy)
 AddToggle(Page3, "🔥 Fix Lag Tối Đa (Ultra Boost)", function(val)
     Lighting.GlobalShadows = not val
     Lighting.FogEnd = val and 9e9 or 100000
     Lighting.Brightness = val and 2 or 1
+    Lighting.OutdoorAmbient = val and Color3.fromRGB(200, 200, 200) or Color3.fromRGB(128, 128, 128)
     
+    for _, light in ipairs(Lighting:GetChildren()) do
+        if light:IsA("PostEffect") or light:IsA("Atmosphere") or light:IsA("Sky") then
+            light.Enabled = not val
+        end
+    end
+
     for _, v in ipairs(workspace:GetDescendants()) do
         if v:IsA("BasePart") then
             v.Material = val and Enum.Material.SmoothPlastic or Enum.Material.Plastic
-            v.Reflectance = val and 0 or v.Reflectance
+            v.Reflectance = 0
+            v.CastShadow = not val
         elseif v:IsA("Decal") or v:IsA("Texture") then
             v.Transparency = val and 1 or 0
         elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
